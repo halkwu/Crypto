@@ -1,0 +1,12 @@
+{
+  "generated": 1,
+  "wallets": [
+    {
+      "label": "eth-wallet",
+      "address": "0xD33C7C296426fB02f5eD4e91FD0f8944dAaC14B7",
+      "privateKey": "0x88761fa2e0fb6e533df71cde6e67c3789de2168d4610e90c8f3c8030ee964c91",
+      "mnemonic": "cancel trigger copy theme helmet dune nominee patrol banner tape tide medal",
+      "createdAt": "2025-12-16T03:54:46.615Z"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "blockstream-faucet-tool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "ts-node blocklstream.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bitcoinjs-lib": "^6.1.0",
+    "ecpair": "^3.0.0",
+    "tiny-secp256k1": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.4.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
+  }
+}
