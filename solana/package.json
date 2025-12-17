@@ -1,0 +1,11 @@
+{
+  "devDependencies": {
+    "@ljharb/tsconfig": "^0.3.2",
+    "@types/node": "^25.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4"
+  }
+}

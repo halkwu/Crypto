@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Wallet, providers, utils } from 'ethers';
+import { Wallet, providers, utils, BigNumber } from 'ethers';
 
 /**
  * =========================
@@ -174,13 +174,60 @@ class EthereumWalletManager {
             return;
           }
 
-          // normalize to etherscan-like fields for printing
-          combined.slice(0, limit).forEach((tx: any, i: number) => {
+          // normalize to etherscan-like fields for printing and compute fees
+          const count = Math.min(combined.length, limit);
+          console.log(`\nAddress : ${address} (showing ${count} txs)`);
+          console.log(`Network : Sepolia`);
+          for (let i = 0; i < Math.min(combined.length, limit); i++) {
+            const tx = combined[i];
             const value = tx.value || tx.delta || '0';
             const hash = tx.hash || tx.transactionHash || tx.id;
-            const block = tx.blockNum || tx.blockNumber || tx.blockHash || 'unknown';
-            console.log(`${i + 1}. hash=${hash} from=${tx.from} to=${tx.to} value=${utils.formatEther(value.toString())} ETH block=${block}`);
-          });
+            let feeStr = 'unknown';
+            let feeBN: BigNumber = BigNumber.from(0);
+            let status = 'pending';
+            let timeIso = 'unknown';
+            try {
+              const receipt = await this.provider.getTransactionReceipt(hash);
+              if (receipt && typeof receipt.status !== 'undefined') {
+                status = receipt.status === 1 ? 'confirmed' : 'failed';
+              }
+
+              let gasPrice: BigNumber | undefined;
+              if (receipt && receipt.effectiveGasPrice) {
+                gasPrice = BigNumber.from(receipt.effectiveGasPrice);
+              } else {
+                const txFull = await this.provider.getTransaction(hash);
+                if (txFull && txFull.gasPrice) gasPrice = BigNumber.from(txFull.gasPrice);
+              }
+              if (receipt && receipt.gasUsed && gasPrice) {
+                const fee = receipt.gasUsed.mul(gasPrice);
+                feeBN = fee;
+                feeStr = `${utils.formatEther(fee)} ETH`;
+              }
+
+              // try to derive time from block info if available
+              const blockNum = tx.blockNum || tx.blockNumber;
+              if (tx.timeStamp) {
+                timeIso = new Date(Number(tx.timeStamp) * 1000).toISOString();
+              } else if (blockNum) {
+                const block = await this.provider.getBlock(blockNum);
+                if (block && block.timestamp) timeIso = new Date(block.timestamp * 1000).toISOString();
+              }
+            } catch (e) {
+              // ignore
+            }
+
+            console.log(`\ntxid: ${hash}`);
+            console.log(`status: ${status} time: ${timeIso} fee: ${feeStr}`);
+            console.log(`outputs:`);
+            const outputsTotal = BigNumber.from(value.toString());
+            const outVal = utils.formatEther(outputsTotal);
+            console.log(`[0] ${outVal} ETH -> ${tx.to ?? 'contract/unknown'}`);
+            console.log(`inputs:`);
+            const inputsTotal = outputsTotal.add(feeBN);
+            const inVal = utils.formatEther(inputsTotal);
+            console.log(`[0] ${inVal} ETH <- ${tx.from ?? 'unknown'}`);
+          }
 
           return;
         } catch (e) {
@@ -198,18 +245,65 @@ class EthereumWalletManager {
       return;
     }
 
-    data.result.slice(0, limit).forEach((tx: any, i: number) => {
-      console.log(
-        `${i + 1}. ${tx.hash} | ${utils.formatEther(tx.value)} ETH | block ${tx.blockNumber}`
-      );
-    });
+    // iterate sequentially so we can fetch receipts, block times and compute fees
+    for (let i = 0; i < Math.min(data.result.length, limit); i++) {
+      const tx = data.result[i];
+      const hash = tx.hash;
+      let feeStr = 'unknown';
+      let feeBN: BigNumber = BigNumber.from(0);
+      let status = 'pending';
+      let timeIso = 'unknown';
+      try {
+        const receipt = await this.provider.getTransactionReceipt(hash);
+        if (receipt && typeof receipt.status !== 'undefined') {
+          status = receipt.status === 1 ? 'confirmed' : 'failed';
+        }
+
+        // gas price handling
+        let gasPrice: BigNumber | undefined;
+        if (receipt && receipt.effectiveGasPrice) {
+          gasPrice = BigNumber.from(receipt.effectiveGasPrice);
+        } else {
+          const txFull = await this.provider.getTransaction(hash);
+          if (txFull && txFull.gasPrice) gasPrice = BigNumber.from(txFull.gasPrice);
+          if (txFull && !txFull.blockNumber && !receipt) status = 'pending';
+        }
+        if (receipt && receipt.gasUsed && gasPrice) {
+          const fee = receipt.gasUsed.mul(gasPrice);
+          feeBN = fee;
+          feeStr = `${utils.formatEther(fee)} ETH`;
+        }
+
+        // timestamp: prefer Etherscan field if present, else fetch block
+        if (tx.timeStamp) {
+          timeIso = new Date(Number(tx.timeStamp) * 1000).toISOString();
+        } else if (tx.blockNumber) {
+          const block = await this.provider.getBlock(tx.blockNumber);
+          if (block && block.timestamp) timeIso = new Date(block.timestamp * 1000).toISOString();
+        }
+      } catch (e) {
+        // ignore — leave unknowns
+      }
+
+      // print in the requested style (Ethereum-adapted)
+      console.log(`\ntxid: ${hash}`);
+      console.log(`status: ${status} time: ${timeIso} fee: ${feeStr}`);
+      console.log(`outputs:`);
+      const outputsTotal = BigNumber.from(tx.value ?? '0');
+      const outVal = utils.formatEther(outputsTotal);
+      console.log(`[0] ${outVal} ETH -> ${tx.to ?? 'contract/unknown'}`);
+      console.log(`inputs:`);
+      const inputsTotal = outputsTotal.add(feeBN);
+      const inVal = utils.formatEther(inputsTotal);
+      console.log(`[0] ${inVal} ETH <- ${tx.from ?? 'unknown'}`);
+    }
   }
 
   /**
    * Send ETH from a private key to a recipient address
    */
   async sendTransaction(fromPrivateKey: string, to: string, amountEther = '0.001'): Promise<string> {
-    const apiKey = process.env.ETHERSCAN_API_KEY || 'CYR4YTW1WY82EW6VJUCQMB2V6U9ERUAEA6';
+    const apiKey = process.env.ETHERSCAN_API_KEY;
     const provider = apiKey
       ? providers.getDefaultProvider(this.config.network || 'Sepolia', { etherscan: apiKey })
       : providers.getDefaultProvider(this.config.network || 'Sepolia');

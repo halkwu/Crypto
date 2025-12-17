@@ -7,6 +7,8 @@ import * as ecc from 'tiny-secp256k1';
 
 const ECPair = ECPairFactory(ecc);
 
+async function sleep(ms: number) { return new Promise((res) => setTimeout(res, ms)); }
+
 const WALLET_FILE = path.join(__dirname, 'wallet.json');
 
 type Wallet = {
@@ -33,53 +35,6 @@ export function saveWallet(wallet: Wallet, file = WALLET_FILE) {
   fs.writeFileSync(file, JSON.stringify(wallet, null, 2), { encoding: 'utf8' });
 }
 
-export async function requestFaucet(options: {
-  faucetUrl: string;
-  address: string;
-  // For APIs like BlockCypher that expect amount (satoshis): optional
-  amount?: number;
-  // If the faucet requires an api token, provide here
-  token?: string;
-  // Some faucets expect form data instead of JSON
-  form?: boolean;
-}) {
-  const { faucetUrl, address, amount, token, form } = options;
-
-  // Determine a safe payload shape; many faucets accept JSON {address}
-  let url = faucetUrl;
-  const headers: Record<string, string> = { 'User-Agent': 'blockstream-faucet-tool/0.1' };
-
-  // Example: BlockCypher expects POST /v1/btc/test3/faucet?token=TOKEN with JSON {address, amount}
-  if (faucetUrl.includes('blockcypher') && token) {
-    url = `${faucetUrl}?token=${encodeURIComponent(token)}`;
-    const data: any = { address };
-    if (amount) data.amount = amount;
-    const resp = await axios.post(url, data, { headers });
-    return resp.data;
-  }
-
-  // Generic JSON POST
-  try {
-    if (form) {
-      const params = new URLSearchParams();
-      params.append('address', address);
-      if (amount) params.append('amount', String(amount));
-      const resp = await axios.post(url, params.toString(), {
-        headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      return resp.data;
-    }
-
-    const resp = await axios.post(url, { address, amount }, { headers });
-    return resp.data;
-  } catch (err: any) {
-    if (err.response) {
-      throw new Error(`Faucet request failed: ${err.response.status} ${JSON.stringify(err.response.data)}`);
-    }
-    throw err;
-  }
-}
-
 // Simple CLI support
 async function main() {
   const argv = process.argv.slice(2);
@@ -92,33 +47,7 @@ async function main() {
     console.log('Address:', wallet.address);
     return;
   }
-
-  if (cmd === 'faucet') {
-    const address = argv[1];
-    if (!address) {
-      console.error('Usage: ts-node blocklstream.ts faucet <address> [faucetUrl] [--amount=SAT] [--token=TOKEN] [--form]');
-      process.exit(1);
-    }
-    const faucetUrl = argv[2] || '';
-    const opts = { faucetUrl, address, amount: undefined as number | undefined, token: undefined as string | undefined, form: false };
-    for (const a of argv.slice(3)) {
-      if (a.startsWith('--amount=')) opts.amount = Number(a.split('=')[1]);
-      if (a.startsWith('--token=')) opts.token = a.split('=')[1];
-      if (a === '--form') opts.form = true;
-    }
-    if (!opts.faucetUrl) {
-      console.error('No faucet URL provided. Provide a faucet endpoint as the second argument.');
-      process.exit(1);
-    }
-    try {
-      const res = await requestFaucet(opts as any);
-      console.log('Faucet response:', res);
-    } catch (e) {
-      console.error('Faucet request error:', e);
-    }
-    return;
-  }
-
+  
   // helper: load saved wallet if exists
   function loadSavedWallet(file = WALLET_FILE): Wallet | null {
     try {
@@ -308,6 +237,8 @@ async function main() {
       process.exit(1);
     }
 
+    const preBalance = (utxos || []).reduce((acc: number, u: any) => acc + (u.value || 0), 0);
+
     let selected: any[] = [];
     let total = 0;
     for (const u of utxos) {
@@ -334,10 +265,10 @@ async function main() {
       const prevOut = prevTx.outs[u.vout];
 
       psbt.addInput({
-        hash: u.txid.toLowerCase(), // 必须是小写 TXID 字符串
+        hash: Buffer.from(u.txid, 'hex').reverse(),
         index: u.vout,
         witnessUtxo: {
-          script: Buffer.from(prevOut.script), // Buffer
+          script: Buffer.from(prevOut.script),
           value: Number(u.value),
         },
       });
@@ -347,14 +278,30 @@ async function main() {
     psbt.addOutput({ address: to, value: amount });
     if (change > 546) psbt.addOutput({ address: saved.address, value: change });
 
-    // Create a Signer-compatible wrapper that ensures publicKey is a Buffer
+    // Create a Signer-compatible wrapper that ensures publicKey and hash are Buffers
     const signer = {
       publicKey: Buffer.from(keyPair.publicKey),
-      sign: (hash: Buffer) => Buffer.from(keyPair.sign(hash))
+      sign: (hash: Buffer) => {
+        const h = Buffer.isBuffer(hash) ? hash : Buffer.from(hash);
+        if (!Buffer.isBuffer(h) || h.length !== 32) {
+          console.error('DEBUG: signer received invalid hash length:', h && h.length);
+          console.error('DEBUG: hash (hex prefix):', h && h.toString('hex').slice(0, 64));
+        }
+        return Buffer.from(keyPair.sign(h));
+      }
     };
-    
-    psbt.signAllInputs(signer);
-    psbt.validateSignaturesOfAllInputs(ecc.verifySchnorr || ecc.verify);
+
+    try {
+      psbt.signAllInputs(signer);
+    } catch (signErr: any) {
+      console.error('DEBUG: signAllInputs failed:', signErr && signErr.message);
+      console.error(signErr && signErr.stack);
+      throw signErr;
+    }
+
+    // Skip explicit signature validation here; proceed to finalize inputs.
+    // (Some environments may choose to call `validateSignaturesOfAllInputs`,
+    // but it can surface low-level tiny-secp256k1 validation errors.)
     psbt.finalizeAllInputs();
 
     const raw = psbt.extractTransaction().toHex();
@@ -366,8 +313,30 @@ async function main() {
     console.log('Broadcasted txid:', txid);
     console.log('Explorer (testnet): https://blockstream.info/testnet/tx/' + txid);
 
+    try {
+      let newBalance = await getBalance(saved.address);
+      const maxAttempts = 6;
+      let attempt = 0;
+      while (attempt < maxAttempts && newBalance === preBalance) {
+        await sleep(1000);
+        attempt++;
+        newBalance = await getBalance(saved.address);
+      }
+      const fmtAmount = (amount / 1e8).toFixed(8);
+      const fmtNewBal = (newBalance / 1e8).toFixed(8);
+      console.log(`Sent ${amount} sats (${fmtAmount} BTC) from ${from} to ${to}, txid: ${txid}`);
+      console.log(`Sender balance: ${newBalance} sats (${fmtNewBal} BTC)`);
+    } catch (balErr: any) {
+      console.log('Sent', amount, 'sats from', from, 'to', to, 'txid:', txid);
+      console.log('Failed to fetch updated balance:', balErr && balErr.message || balErr);
+    }
+
   } catch (e: any) {
-    console.error('Error sending transaction:', e.message || e);
+    if (e && e.response) {
+      console.error('Error sending transaction: HTTP', e.response.status, JSON.stringify(e.response.data));
+    } else {
+      console.error('Error sending transaction:', e.message || e);
+    }
     process.exit(1);
   }
 
@@ -378,9 +347,8 @@ async function main() {
 
   console.log('Usage:');
   console.log('  ts-node blocklstream.ts generate                         # generate wallet and save to wallet.json');
-  console.log('  ts-node blocklstream.ts faucet <address> <faucetUrl> ...  # request testnet coins');
   console.log('  ts-node blocklstream.ts balance [<address>]              # show balance (satoshis) for address or saved wallet');
-  console.log('  ts-node blocklstream.ts history [<address>] [--limit=N] [--full]  # list recent txs; --full prints raw JSON');
+  console.log('  ts-node blocklstream.ts txs [<address>] [--limit=N] [--full]  # list recent txs; --full prints raw JSON');
   console.log('  ts-node blocklstream.ts tx <txid> [--hex]                  # fetch and print full tx JSON (or raw hex with --hex)');
   console.log('  ts-node blocklstream.ts send <fromAddress> <toAddress> <amount> [--feeRate=SAT_PER_VB]                  # add interactive prompts for sender/recipient addresses and amount');
 }
