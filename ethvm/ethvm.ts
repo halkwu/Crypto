@@ -105,12 +105,7 @@ class EthereumWalletManager {
   /**
    * Query ETH balance (Sepolia)
    */
-  async queryBalance(address: string): Promise<void> {
-    const balance = await this.provider.getBalance(address);
-    console.log(`\nAddress : ${address}`);
-    console.log(`Network : Sepolia`);
-    console.log(`Balance : ${utils.formatEther(balance)} ETH`);
-  }
+  // (balance CLI now uses the exported `queryBalance` helper)
 
   /**
    * Query tx history (Sepolia via Etherscan)
@@ -161,9 +156,9 @@ class EthereumWalletManager {
         try {
           const call = async (filter: any) => {
             const body = { jsonrpc: '2.0', id: 1, method: 'alchemy_getAssetTransfers', params: [filter] };
-            const r = await fetch(alchemyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            const j = await r.json();
-            return j.result?.transfers || [];
+              const r = await fetch(alchemyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+              const j: any = await r.json();
+              return j.result?.transfers || [];
           };
 
           const out = await call({ fromBlock: '0x0', toBlock: 'latest', fromAddress: address, maxCount: limit, category: ['external', 'internal'] });
@@ -339,7 +334,13 @@ class EthereumWalletManager {
       if (!this.config.address) {
         throw new Error('Address is required for balance mode.');
       }
-      await this.queryBalance(this.config.address);
+      // use the module-level exported helper to get formatted info
+      const info = await queryBalance(this.config.address);
+      console.log(`\nAddress : ${info.address}`);
+      console.log(`Network : ${info.network}`);
+      console.log(`Balance : ${info.balance}`);
+      const cur = (info as any).Currency ?? info.currency ?? 'ETH';
+      console.log(`currency : ${cur}`);
       return;
     }
 
@@ -483,4 +484,13 @@ async function main() {
 }
 
 main();
+ 
+// Reusable helper for other modules (REST API) to get formatted balance
+export async function queryBalance(address: string): Promise<{ address: string; network: string; balance: string;  currency: string; }> {
+  const rpc = process.env.ALCHEMY_SEPOLIA_RPC || process.env.ALCHEMY_RPC || process.env.ALCHEMY_MAINNET_RPC;
+  const provider = rpc ? new providers.JsonRpcProvider(rpc, 'sepolia') : providers.getDefaultProvider('sepolia', { etherscan: process.env.ETHERSCAN_API_KEY });
+  const balance = await provider.getBalance(address);
+  const formatted = utils.formatEther(balance);
+  return { address, network: 'Sepolia', balance: `${formatted}`, currency: 'ETH' };
+}
 

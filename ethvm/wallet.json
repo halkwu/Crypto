@@ -2,11 +2,11 @@
   "generated": 1,
   "wallets": [
     {
-      "label": "eth-wallet",
-      "address": "0x24C05221757D8A02688ca054570EE9AaBc9F1733",
-      "privateKey": "0xf23eb555d0d8699548474fb3716bc266c92bcb198fc3f11f1014ab967bf2577b",
-      "mnemonic": "soda comfort awesome ready give hamster connect fatal mimic baby gym stamp",
-      "createdAt": "2025-12-16T03:55:03.014Z"
+      "label": "sepolia-wallet",
+      "address": "0x6B10b04D9F284A25D558AeeB82a543d472642BbC",
+      "privateKey": "0x50ae6b9279c679376dcbfaf64b6c0c4b265bde9bbe9ba3bf8ccac95a16090ff5",
+      "mnemonic": "vague leopard harbor salmon cave city source spoon tree hamster exit carry",
+      "createdAt": "2025-12-17T06:37:41.070Z"
     }
   ]
 }

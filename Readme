@@ -1,0 +1,2 @@
+Invoke-RestMethod "http://localhost:3000/balance?address=YourAddress" | ConvertTo-Json
+Invoke-RestMethod "http://localhost:3000/txs?address=YourAddress" | ConvertTo-Json 

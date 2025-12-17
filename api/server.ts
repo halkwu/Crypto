@@ -1,5 +1,8 @@
 import express from 'express';
 import bodyParser from 'body-parser';
+import { fetchTransactions as fetchBTC } from '../blockstream/api';
+import { fetchTransactions as fetchETH } from '../ethvm/api';
+import { fetchTransactions as fetchSOL } from '../solana/api';
 
 const app = express();
 app.use(bodyParser.json());
@@ -18,6 +21,37 @@ app.get('/api/v1/txs', (req, res) => {
     status: ['success','pending','failed'][i % 3]
   }));
   res.json(txs);
+});
+
+// Unified route: GET /api/wallets/:chain/transactions?address=...&limit=...
+app.get('/api/wallets/:chain/transactions', async (req, res) => {
+  const chain = (req.params.chain || '').toUpperCase();
+  const address = String(req.query.address || '');
+  const limit = Number(req.query.limit || 10);
+
+  if (!address) return res.status(400).json({ error: 'missing address query parameter' });
+
+  try {
+    switch (chain) {
+      case 'BTC': {
+        const txs = await fetchBTC(address, limit);
+        return res.json(txs);
+      }
+      case 'ETH': {
+        const txs = await fetchETH(address, limit);
+        return res.json(txs);
+      }
+      case 'SOL': {
+        const txs = await fetchSOL(address, limit);
+        return res.json(txs);
+      }
+      default:
+        return res.status(400).json({ error: 'unsupported chain' });
+    }
+  } catch (err: any) {
+    console.error('fetchTransactions error:', err?.message || err);
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
 });
 
 // POST /api/v1/transfer   body: { chain, fromAccount, to, amount, fee }
