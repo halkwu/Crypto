@@ -11,7 +11,80 @@ import {
   PublicKey
 } from "@solana/web3.js";
 
-async function printTransactionHistory(conn: Connection, pubkey: PublicKey, limit = 10) {
+export async function printHelp() {
+  console.log(`Usage: npx ts-node solana.ts <command> [args]\n
+Commands:
+  balance <address>                      Print address balance (SOL) only
+  txs <address> [limit]                  Show recent transactions for address
+  generate [outputPath] [label]          Generate a new wallet and save to JSON (default: wallet.json, solana-wallet)
+  send <senderPrivateKey> <RECIPIENT_ADDRESS> [amount]   Send SOL from sender to recipient (provide private key as a JSON array string or comma-separated numbers, e.g. "[1,2,3,...]")
+  help                                   Show this help
+`);
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const cmd = argv[0];
+  try {
+    switch (cmd) {
+      case 'generate': {
+        const wallets = generateKeypairs(1, argv[2] || 'solana-wallet');
+        const p = saveWallets(wallets, argv[1] || 'wallet.json');
+        console.log(JSON.stringify(wallets[0], null, 2));
+      } break;
+      case 'balance': {
+        const out = await getBalanceObject(argv[1]);
+        console.log(JSON.stringify(out, null, 2));
+      } break;
+      case 'send': await send(argv[1], argv[2], argv[3]); break;
+      case 'txs': await getTxs(argv[1], argv[2]); break;
+      case 'help': await printHelp(); break;
+      default: console.error('Unknown or missing command'); await printHelp(); process.exit(1);
+    }
+  } catch (e: any) {
+    console.error('Error:', e?.message ?? e);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
+
+export function getConnection() { return new Connection(clusterApiUrl("devnet"), "confirmed"); }
+
+export interface SolanaWalletInfo {
+  label: string;
+  address: string;
+  secretKey: number[];
+  createdAt: string;
+}
+
+// Generate Solana wallets
+export function generateKeypairs(count = 1, label = 'solana-wallet'): SolanaWalletInfo[] {
+  const out: SolanaWalletInfo[] = [];
+  for (let i = 0; i < count; i++) {
+    const kp = Keypair.generate();
+    out.push({
+      label: count > 1 ? `${label}-${i + 1}` : label,
+      address: kp.publicKey.toBase58(),
+      secretKey: Array.from(kp.secretKey),
+      createdAt: new Date().toISOString(),
+    });
+    console.log(`Generated ${out[out.length - 1].address}`);
+  }
+  return out;
+}
+
+// Save generated wallets to disk
+export function saveWallets(wallets: SolanaWalletInfo[], outputPath = 'wallet.json') {
+  const payload = { generated: wallets.length, wallets };
+  const p = path.resolve(process.cwd(), outputPath);
+  fs.writeFileSync(p, JSON.stringify(payload, null, 2), 'utf8');
+  console.log(`Saved ${wallets.length} wallet(s) to ${p}`);
+  return p;
+}
+
+// Helper to print transaction history for an address
+export async function printTransactionHistory(conn: Connection, pubkey: PublicKey, limit = 1000) {
   try {
     console.log(`\nLast ${limit} transactions (address ${pubkey.toBase58()}):`);
     const sigs = await conn.getSignaturesForAddress(pubkey, { limit });
@@ -36,91 +109,60 @@ async function printTransactionHistory(conn: Connection, pubkey: PublicKey, limi
   }
 }
 
-async function sleep(ms: number) { return new Promise((res) => setTimeout(res, ms)); }
-
-async function requestAirdropWithRetry(conn: Connection, pubkey: PublicKey, lamports: number, maxAttempts = 6) {
-  let attempt = 0; let delay = 500;
-  while (attempt < maxAttempts) {
-    try {
-      attempt++;
-      console.log(`Attempting airdrop (attempt ${attempt}/${maxAttempts})...`);
-      const sig = await conn.requestAirdrop(pubkey, lamports);
-      return sig;
-    } catch (err: any) {
-      const msg = err?.message ?? String(err);
-      console.log(`airdrop error: ${msg}`);
-      if (/airdrop limit|faucet has run dry|Too Many Requests/i.test(msg)) return null;
-      await sleep(delay);
-      delay *= 2;
-    }
-  }
-  return null;
-}
-
-
-function getConnection() { return new Connection(clusterApiUrl("devnet"), "confirmed"); }
-
-function loadKeypairFromFile(file: string): Keypair {
-  // Resolve common relative locations: exact path, relative to cwd, relative to this script's directory
-  const candidates = [file, path.join(process.cwd(), file), path.join(__dirname, file)];
-  let found: string | null = null;
-  for (const c of candidates) {
-    try { if (fs.existsSync(c)) { found = c; break; } } catch (e) { /* ignore */ }
-  }
-  if (!found) throw new Error('key file not found: ' + file + ' (tried ' + candidates.join(', ') + ')');
-  const raw = fs.readFileSync(found, 'utf8');
-  const parsed = JSON.parse(raw);
-  if (!parsed || !Array.isArray(parsed.secretKey)) throw new Error('invalid key file format');
-  return Keypair.fromSecretKey(Uint8Array.from(parsed.secretKey));
-}
-
-function loadKeypairFromInput(input: string): Keypair {
-  // If it's a file path, load from file
-  if (fs.existsSync(input)) return loadKeypairFromFile(input);
-
-  // Try parse as JSON (either array or object with secretKey)
+// Parse a provided secret string into a Keypair.
+export function parseSecretToKeypair(secret: string): Keypair {
+  if (!secret) throw new Error('secret is required');
+  let nums: number[] = [];
+  // Try JSON
   try {
-    const parsed = JSON.parse(input);
-    if (Array.isArray(parsed)) return Keypair.fromSecretKey(Uint8Array.from(parsed));
-    if (parsed && Array.isArray(parsed.secretKey)) return Keypair.fromSecretKey(Uint8Array.from(parsed.secretKey));
+    const parsed = JSON.parse(secret);
+    if (Array.isArray(parsed)) nums = parsed.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n));
+    else if (parsed && Array.isArray((parsed as any).secretKey)) nums = (parsed as any).secretKey.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n));
   } catch (e) {
     // ignore
   }
 
   // Try comma-separated numbers
-  const parts = input.split(',').map(s => s.trim()).filter(Boolean);
-  const nums = parts.map(s => Number(s)).filter(n => Number.isFinite(n));
-  if (nums.length >= 32) return Keypair.fromSecretKey(Uint8Array.from(nums));
+  if (nums.length === 0) {
+    const parts = String(secret).split(',').map(s => s.trim()).filter(Boolean);
+    nums = parts.map(s => Number(s)).filter(n => Number.isFinite(n));
+  }
 
-  throw new Error('Invalid secret input. Provide a path to a JSON keyfile, a JSON array string, or comma-separated numbers representing the secret key.');
+  if (nums.length >= 64) return Keypair.fromSecretKey(Uint8Array.from(nums.slice(0, 64)));
+  if (nums.length === 32) return Keypair.fromSeed(Uint8Array.from(nums));
+
+  throw new Error('Invalid secret key format. Provide a JSON array of numbers (32 or 64 items) or comma-separated numbers.');
 }
 
-async function getBalance(address: string) {
-  if (!address) { console.error('Usage: npx ts-node solana.ts balance <address>'); process.exit(1); }
+// `getBalance` CLI helper removed. Use `getBalanceValue` for programmatic access.
+async function getBalanceValue(address: string): Promise<number> {
+  if (!address) throw new Error('address required');
   let pub: PublicKey;
-  try { pub = new PublicKey(address); } catch (e) { console.error('Invalid address'); process.exit(1); }
+  try { pub = new PublicKey(address); } catch (e) { throw new Error('Invalid address'); }
   const conn = getConnection();
   const bal = await conn.getBalance(pub);
-  console.log('Balance:', bal / LAMPORTS_PER_SOL, 'SOL');
+  return bal / LAMPORTS_PER_SOL;
 }
 
-async function send(senderSecretOrFile: string, recipientArg: string, amountArg = '0.1') {
-  if (!recipientArg) { console.error('Usage: npx ts-node solana.ts send <senderSecretOrFile> <toAddress> [amount]'); process.exit(1); }
+// `getBalanceObject` CLI helper removed. Use `getBalanceObject` for programmatic access.
+export async function getBalanceObject(address: string): Promise<{ address: string; network: string; balance: string; currency: string }> {
+  const bal = await getBalanceValue(address);
+  return {
+    address,
+    network: 'devnet',
+    balance: String(bal),
+    currency: 'SOL'
+  };
+}
+
+
+export async function send(senderSecretOrFile: string, recipientArg: string, amountArg = '0.1') {
+  if (!recipientArg) { console.error('Usage: npx ts-node solana.ts send <senderPrivateKey> <toAddress> [amount]'); process.exit(1); }
   let recipientPubkey: PublicKey;
   try { recipientPubkey = new PublicKey(recipientArg); } catch (e) { console.error('Invalid recipient address'); process.exit(1); }
   let sender: Keypair;
   try {
-    // If senderSecretOrFile omitted or falsy, try loading default solana/wallet.json
-    if (!senderSecretOrFile) {
-      // try script-local solana.json first, then project-root solana/wallet.json
-      const localCandidates = [path.join(__dirname, 'wallet.json'), path.join(process.cwd(), 'solana', 'wallet.json'), path.join(process.cwd(), 'wallet.json')];
-      let found: string | null = null;
-      for (const c of localCandidates) { if (fs.existsSync(c)) { found = c; break; } }
-      if (!found) throw new Error('No sender key provided and no default solana/wallet.json found');
-      sender = loadKeypairFromFile(found);
-    } else {
-      sender = loadKeypairFromInput(senderSecretOrFile);
-    }
+    sender = parseSecretToKeypair(senderSecretOrFile);
   } catch (e: any) {
     console.error('Failed to load sender key:', e?.message ?? e);
     process.exit(1);
@@ -130,11 +172,8 @@ async function send(senderSecretOrFile: string, recipientArg: string, amountArg 
   const conn = getConnection();
   let current = await conn.getBalance(sender.publicKey);
   if (current < requiredLamports) {
-    console.log('Insufficient balance, attempting airdrop...');
-    const sig = await requestAirdropWithRetry(conn, sender.publicKey, Math.max(requiredLamports - current, LAMPORTS_PER_SOL));
-    if (!sig) { console.error('Unable to obtain test SOL'); process.exit(1); }
-    await conn.confirmTransaction(sig);
-    current = await conn.getBalance(sender.publicKey);
+    console.error('Insufficient balance and airdrop/faucet functionality has been removed. Please fund the sender account and try again.');
+    process.exit(1);
   }
   const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: sender.publicKey, toPubkey: recipientPubkey, lamports: requiredLamports }));
   const sig = await sendAndConfirmTransaction(conn, tx, [sender]);
@@ -142,55 +181,84 @@ async function send(senderSecretOrFile: string, recipientArg: string, amountArg 
   console.log('Sender balance:', (await conn.getBalance(sender.publicKey)) / LAMPORTS_PER_SOL, 'SOL');
 }
 
-async function requestFaucet(address: string, amountArg = '1') {
-  if (!address) { console.error('Usage: npx ts-node solana.ts faucet <address> [amount]'); process.exit(1); }
-  let pub: PublicKey;
-  try { pub = new PublicKey(address); } catch (e) { console.error('Invalid address'); process.exit(1); }
-  const amountSOL = Number(amountArg) || 1;
-  const lamports = Math.floor(amountSOL * LAMPORTS_PER_SOL);
-  const conn = getConnection();
-  const sig = await requestAirdropWithRetry(conn, pub, lamports);
-  if (!sig) { console.error('Airdrop failed'); process.exit(1); }
-  await conn.confirmTransaction(sig);
-  console.log('Airdrop confirmed. New balance:', (await conn.getBalance(pub)) / LAMPORTS_PER_SOL, 'SOL');
-}
 
-async function getTxs(address: string, limitArg = '10') {
+export async function getTxs(address: string, limitArg = '1000') {
   if (!address) { console.error('Usage: npx ts-node solana.ts txs <address> [limit]'); process.exit(1); }
   let pub: PublicKey;
   try { pub = new PublicKey(address); } catch (e) { console.error('Invalid address'); process.exit(1); }
-  const limit = Number(limitArg) || 10;
+  const limit = Number(limitArg) || 1000;
   const conn = getConnection();
-  await printTransactionHistory(conn, pub, limit);
-}
 
-async function printHelp() {
-  console.log(`Usage: npx ts-node solana.ts <command> [args]\n
-Commands:
-  balance <address>                      Print address balance (SOL) only
-  txs <address> [limit]                  Show recent transactions for address
-  faucet <address> [amount]              Request test SOL airdrop to address (devnet)
-  send <senderKeyFile.json>/<senderSecretKey> <RECIPIENT_ADDRESS> [amount]   Send SOL from sender to recipient(for example: npx ts-node solana.ts send "[1,2,3,...]" <RECIPIENT_ADDRESS> 0.01)
-  help                                   Show this help
-`);
-}
+  const sigs = await conn.getSignaturesForAddress(pub, { limit });
+  const txs: Array<any> = [];
+  for (const s of sigs) {
+    const parsed = await conn.getParsedTransaction(s.signature, 'confirmed');
+    const time = s.blockTime ? new Date(s.blockTime * 1000).toISOString() : null;
+    const status = s.err ? 'failed' : 'confirmed';
+    const fee = parsed?.meta?.fee ? String(parsed.meta.fee / LAMPORTS_PER_SOL) : '0';
 
-async function main() {
-  const argv = process.argv.slice(2);
-  const cmd = argv[0];
-  try {
-    switch (cmd) {
-      case 'balance': await getBalance(argv[1]); break;
-      case 'send': await send(argv[1], argv[2], argv[3]); break;
-      case 'faucet': await requestFaucet(argv[1], argv[2]); break;
-      case 'txs': await getTxs(argv[1], argv[2]); break;
-      case 'help': await printHelp(); break;
-      default: console.error('Unknown or missing command'); await printHelp(); process.exit(1);
+    let from = '';
+    let to = '';
+    let amount = '0';
+
+    // Try to extract from parsed instructions (system transfers, token transfers, etc.)
+    try {
+      const instructions = (parsed as any)?.transaction?.message?.instructions || [];
+      for (const instr of instructions) {
+        const p = instr.parsed || (instr as any).program ? instr : null;
+        if (p && p.parsed && p.parsed.info) {
+          const info = p.parsed.info;
+          if (info.source || info.from) from = info.source || info.from;
+          if (info.destination || info.to) to = info.destination || info.to;
+          if (info.lamports !== undefined) amount = String(info.lamports);
+          if (info.amount !== undefined) amount = String(info.amount);
+          if (from || to || amount !== '0') break;
+        }
+      }
+    } catch (e) {
+      // ignore parsing errors
     }
-  } catch (e: any) {
-    console.error('Error:', e?.message ?? e);
-    process.exit(1);
-  }
-}
 
-if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
+    // Fallback: infer amount using pre/post balances and account key positions
+    if ((amount === '0' || !from || !to) && parsed?.meta && parsed.transaction?.message?.accountKeys) {
+      const accountKeys = parsed.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey));
+      const pre = parsed.meta.preBalances || [];
+      const post = parsed.meta.postBalances || [];
+      const idx = accountKeys.indexOf(address);
+      if (idx >= 0 && pre[idx] !== undefined && post[idx] !== undefined) {
+        const diff = post[idx] - pre[idx];
+        amount = String(Math.abs(diff));
+        if (diff > 0) { from = accountKeys.find((k: string) => k !== address) || ''; to = address; }
+        else { from = address; to = accountKeys.find((k: string) => k !== address) || ''; }
+      } else {
+        from = accountKeys[0] || '';
+        to = accountKeys[1] || '';
+      }
+    }
+
+    // Convert amount (likely lamports) to SOL when numeric; otherwise leave as-is
+    let amountSol = String(amount);
+    try {
+      const n = Number(amount);
+      if (!Number.isNaN(n)) {
+        amountSol = String(n / LAMPORTS_PER_SOL);
+      }
+    } catch (e) {
+      // keep original amount string if conversion fails
+    }
+
+    txs.push({
+      Signature: s.signature,
+      time,
+      from: (from || '').toLowerCase(),
+      to: (to || '').toLowerCase(),
+      amount: amountSol,
+      fee: String(fee),
+      currency: 'SOL',
+      status: status === 'failed' ? 'failed' : 'confirmed'
+    });
+  }
+  const out = { address, network: 'devnet', txs };
+  console.log(JSON.stringify(out, null, 2));
+  return out;
+}

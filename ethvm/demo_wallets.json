@@ -1,0 +1,19 @@
+{
+  "generated": 2,
+  "wallets": [
+    {
+      "label": "demo-wallets-1",
+      "address": "0x80dB6d708C01ff4f1fF9ED435650650Ab401E27C",
+      "privateKey": "0x64c011bc89cbbe379701d178991b0855acbdb44922a54c5845127e5a3a0adb1e",
+      "mnemonic": "stadium sweet bridge dose power insect broccoli sing picnic weasel crazy fog",
+      "createdAt": "2025-12-18T01:45:47.552Z"
+    },
+    {
+      "label": "demo-wallets-2",
+      "address": "0x910217b56b65b4329b66b0Af967147564ac85ae9",
+      "privateKey": "0x88642c3b08504679fb140450dc5f05492f2ece2a54d55bb0a255a622b337791e",
+      "mnemonic": "poet embody verify fringe deputy era robust board obvious have tone bachelor",
+      "createdAt": "2025-12-18T01:45:47.577Z"
+    }
+  ]
+}
