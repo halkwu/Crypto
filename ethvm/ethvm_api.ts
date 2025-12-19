@@ -8,11 +8,13 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// validate private key format
 function isValidPrivateKey(k: string | undefined): k is string {
   if (!k || typeof k !== 'string') return false;
   return /^0x[0-9a-fA-F]{64}$/.test(k);
 }
 
+// GET /balance - get balance for an address
 app.get('/balance', async (req, res) => {
   const address = String(req.query.address || '');
   if (!address) return res.status(400).json({ error: 'address required' });
@@ -24,18 +26,21 @@ app.get('/balance', async (req, res) => {
   }
 });
 
+//  GET /txs - get transactions for an address, optional limit
 app.get('/txs', async (req, res) => {
   const address = String(req.query.address || '');
-  const limit = Number(req.query.limit || 10);
   if (!address) return res.status(400).json({ error: 'address required' });
   try {
       const txs = await queryTransactions(address);
-    return res.json({ address, txs });
+    // Return same shape as CLI: { address, network: 'Sepolia', transaction: [...] }
+    const result = { address, network: 'Sepolia', transaction: txs };
+    return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? e });
   }
 });
 
+// POST /send - send ETH from sender to recipient
 app.post('/send', async (req, res) => {
   const { fromPrivateKey, to, amount } = req.body || {};
   if (!fromPrivateKey || !to) return res.status(400).json({ error: 'fromPrivateKey and to are required' });
@@ -43,13 +48,13 @@ app.post('/send', async (req, res) => {
   try {
     if (!amount || String(amount).trim() === '') return res.status(400).json({ error: 'amount is required' });
     const result = await sendTransaction(fromPrivateKey, to, String(amount));
-    if (result.receipt) return res.json({ hash: result.hash, receipt: result.receipt });
-    return res.json({ hash: result.hash, info: 'sent (wait failed)' });
+    return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? e });
   }
 });
 
+// POST /generate - generate wallets (count, label) and optionally save to disk
 app.post('/generate', async (req, res) => {
   const { count = 1, label = 'sepolia-wallet' } = req.body || {};
   const n = Number(count) || 1;

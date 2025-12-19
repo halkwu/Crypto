@@ -15,5 +15,17 @@ Invoke-RestMethod "http://localhost:3000/balance?address=YourAddress" | ConvertT
 
 Invoke-RestMethod "http://localhost:3000/txs?address=YourAddress" | ConvertTo-Json
 
-Invoke-RestMethod http://localhost:3000/generate -Method Post -ContentType 'application/json' -Body '{"count":1,"label":"dev"}' | ConvertTo-Json
+Invoke-RestMethod -Uri 'http://localhost:3000/generate' -Method POST -Body (ConvertTo-Json @{count=2; label='demo-wallets'; save=$true; outputPath='demo_wallets.json'}) 
+-ContentType 'application/json' | ConvertTo-Json
 
+$body = @{ senderSecret='[1,2,3,...]'; to='RecipientPublicKeyBase58'; amount='0.1' } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:3000/send -Method Post -Body $body -ContentType 'application/json'
+
+blockstream:
+
+Invoke-RestMethod "http://localhost:3000/balance?address=YourAddress" | ConvertTo-Json
+
+Invoke-RestMethod "http://localhost:3000/txs?address=YourAddress" | ConvertTo-Json
+
+Invoke-RestMethod -Uri 'http://localhost:3000/generate' -Method POST -Body (ConvertTo-Json @{count=2; label='demo-wallets'; save=$true; outputPath='demo_wallets.json'}) 
+-ContentType 'application/json' | ConvertTo-Json

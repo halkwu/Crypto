@@ -93,8 +93,8 @@ class EthereumWalletManager {
         throw new Error('Address is required for txs mode.');
       }
       // use exported helper to get txs and return a single JSON object
-      const txs = await queryTransactions(this.config.address);
-      const result = { address: this.config.address, network: 'Sepolia', txs };
+      const transaction = await queryTransactions(this.config.address);
+      const result = { address: this.config.address, network: 'Sepolia', transaction: transaction };
       console.log(JSON.stringify(result, null, 2));
       return result;
     }
@@ -135,8 +135,9 @@ class EthereumWalletManager {
 
       if (!amount || String(amount).trim() === '') throw new Error('Missing amount: provide --amount <eth>');
 
-      await sendTransaction(fromKey, toAddr, String(amount), this.config.network);
-      return;
+      const result = await sendTransaction(fromKey, toAddr, String(amount), this.config.network);
+      console.log(JSON.stringify(result, null, 2));
+      return result;
     }
   }
 }
@@ -279,7 +280,19 @@ export function saveWallets(wallets: WalletInfo[], outputPath = 'wallet.json'): 
 }
 
 // Exported reusable sendTransaction for external use (returns hash and optional receipt)
-export async function sendTransaction(fromPrivateKey: string, to: string, amount: string, network = 'sepolia'): Promise<{ hash: string; receipt?: any }> {
+export interface SendResult {
+  Signature: string;
+  time: string | null;
+  from: string;
+  to: string;
+  amount: number | string;
+  fee: number | string;
+  currency: string;
+  status: 'pending' | 'confirmed' | 'failed' | 'unknown';
+  senderBalance?: number | string;
+}
+
+export async function sendTransaction(fromPrivateKey: string, to: string, amount: string, network = 'sepolia'): Promise<SendResult> {
   if (!amount || String(amount).trim() === '') throw new Error('amount is required');
   const apiKey = process.env.ETHERSCAN_API_KEY;
   const provider = apiKey
@@ -291,14 +304,68 @@ export async function sendTransaction(fromPrivateKey: string, to: string, amount
   console.log(`Sending ${amtStr} ETH from ${sender.address} to ${to} on ${network}`);
   const tx = await sender.sendTransaction({ to, value: utils.parseEther(amtStr) });
   console.log(`Transaction submitted: ${tx.hash}`);
+
   let receipt: any = null;
+  let status: SendResult['status'] = 'pending';
+  let timeIso: string | null = null;
+  let feeStr: string | null = null;
   try {
     receipt = await tx.wait();
-    console.log(`Transaction confirmed in block ${receipt.blockNumber}`);
+    status = receipt && typeof receipt.status !== 'undefined' ? (receipt.status === 1 ? 'confirmed' : 'failed') : 'unknown';
+    console.log(`Transaction ${tx.hash} status: ${status} block ${receipt.blockNumber}`);
+
+    try {
+      const block = receipt.blockNumber ? await provider.getBlock(receipt.blockNumber) : null;
+      if (block && block.timestamp) timeIso = new Date(block.timestamp * 1000).toISOString();
+      else timeIso = new Date().toISOString();
+    } catch (e) {
+      timeIso = new Date().toISOString();
+    }
+
+    try {
+      let gasPrice = (receipt as any).effectiveGasPrice ? BigNumber.from((receipt as any).effectiveGasPrice) : undefined;
+      if (!gasPrice) {
+        const txFull = await provider.getTransaction(tx.hash);
+        if (txFull && txFull.gasPrice) gasPrice = BigNumber.from(txFull.gasPrice as any);
+      }
+      if (receipt && receipt.gasUsed && gasPrice) {
+        const fee = receipt.gasUsed.mul(gasPrice);
+        feeStr = utils.formatEther(fee);
+      }
+    } catch (e) {
+      feeStr = null;
+    }
   } catch (err) {
     console.warn(`Error waiting for confirmation: ${err instanceof Error ? err.message : err}`);
+    status = 'pending';
+    timeIso = new Date().toISOString();
   }
-  return { hash: tx.hash, receipt };
+
+  // get sender balance after tx
+  let senderBalanceStr: string | null = null;
+  try {
+    const bal = await provider.getBalance(sender.address);
+    senderBalanceStr = utils.formatEther(bal);
+  } catch (e) {
+    senderBalanceStr = null;
+  }
+
+  const result: SendResult = {
+    Signature: tx.hash,
+    time: timeIso,
+    from: sender.address,
+    to,
+    amount: (() => {
+      const n = Number(amtStr);
+      return Number.isFinite(n) ? n : amtStr;
+    })(),
+    fee: feeStr ? Number(feeStr) : 'unknown',
+    currency: 'ETH',
+    status,
+    senderBalance: senderBalanceStr ? Number(senderBalanceStr) : 'unknown',
+  };
+
+  return result;
 }
 
 // Reusable helper for other modules (REST API) to get formatted balance
@@ -375,7 +442,7 @@ export async function queryTransactions(address: string): Promise<any[]> {
       }
 
       out.push({
-        txHash: hash,
+        Signature: hash,
         time: timeIso,
         from: tx.from,
         to: tx.to,
@@ -411,11 +478,12 @@ export async function queryTransactions(address: string): Promise<any[]> {
         amountStr = raw;
       }
       return {
-        txHash: t.hash || t.transactionHash,
+        Signature: t.hash || t.transactionHash,
         time: t.metadata?.blockTimestamp ? new Date(t.metadata.blockTimestamp).toISOString() : null,
         from: t.from,
         to: t.to,
         amount: amountStr,
+        fee: 'unknown',
         currency: 'ETH',
         status: 'unknown',
       };

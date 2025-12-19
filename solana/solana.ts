@@ -29,14 +29,17 @@ async function main() {
     switch (cmd) {
       case 'generate': {
         const wallets = generateKeypairs(1, argv[2] || 'solana-wallet');
-        const p = saveWallets(wallets, argv[1] || 'wallet.json');
         console.log(JSON.stringify(wallets[0], null, 2));
       } break;
       case 'balance': {
         const out = await getBalanceObject(argv[1]);
         console.log(JSON.stringify(out, null, 2));
       } break;
-      case 'send': await send(argv[1], argv[2], argv[3]); break;
+      case 'send': {
+        const res = await sendTransaction(argv[1], argv[2], argv[3]);
+        console.log(`Sent ${res.amount} SOL to ${res.to}, signature:`, res.Signature);
+        if (typeof res.senderBalance !== 'undefined') console.log('Sender balance:', res.senderBalance, 'SOL');
+      } break;
       case 'txs': await getTxs(argv[1], argv[2]); break;
       case 'help': await printHelp(); break;
       default: console.error('Unknown or missing command'); await printHelp(); process.exit(1);
@@ -54,7 +57,7 @@ export function getConnection() { return new Connection(clusterApiUrl("devnet"),
 export interface SolanaWalletInfo {
   label: string;
   address: string;
-  secretKey: number[];
+  PrivateKey: number[];
   createdAt: string;
 }
 
@@ -66,7 +69,7 @@ export function generateKeypairs(count = 1, label = 'solana-wallet'): SolanaWall
     out.push({
       label: count > 1 ? `${label}-${i + 1}` : label,
       address: kp.publicKey.toBase58(),
-      secretKey: Array.from(kp.secretKey),
+      PrivateKey: Array.from(kp.secretKey),
       createdAt: new Date().toISOString(),
     });
     console.log(`Generated ${out[out.length - 1].address}`);
@@ -82,33 +85,6 @@ export function saveWallets(wallets: SolanaWalletInfo[], outputPath = 'wallet.js
   console.log(`Saved ${wallets.length} wallet(s) to ${p}`);
   return p;
 }
-
-// Helper to print transaction history for an address
-export async function printTransactionHistory(conn: Connection, pubkey: PublicKey, limit = 1000) {
-  try {
-    console.log(`\nLast ${limit} transactions (address ${pubkey.toBase58()}):`);
-    const sigs = await conn.getSignaturesForAddress(pubkey, { limit });
-    if (!sigs || sigs.length === 0) {
-      console.log('  No transaction history');
-      return;
-    }
-    for (const s of sigs) {
-      const parsed = await conn.getParsedTransaction(s.signature);
-      const time = s.blockTime ? new Date(s.blockTime * 1000).toISOString() : 'n/a';
-      const status = s.err ? 'failed' : 'success';
-      console.log(`  Signature: ${s.signature}  slot: ${s.slot}  time: ${time}  status: ${status}`);
-      try { console.log('    Raw signature object:'); console.log(JSON.stringify(s, null, 2)); } catch (e) { /* ignore */ }
-      if (parsed) {
-        try { console.log('    Full parsed transaction info:'); console.log(JSON.stringify(parsed, null, 2)); } catch (e) { /* ignore */ }
-      } else {
-        try { const raw = await conn.getTransaction(s.signature); console.log('    Raw transaction:'); console.log(JSON.stringify(raw, null, 2)); } catch (e) { /* ignore */ }
-      }
-    }
-  } catch (err: any) {
-    console.log('Error querying transaction history:', err?.message ?? err);
-  }
-}
-
 // Parse a provided secret string into a Keypair.
 export function parseSecretToKeypair(secret: string): Keypair {
   if (!secret) throw new Error('secret is required');
@@ -156,32 +132,53 @@ export async function getBalanceObject(address: string): Promise<{ address: stri
 }
 
 
-export async function send(senderSecretOrFile: string, recipientArg: string, amountArg = '0.1') {
-  if (!recipientArg) { console.error('Usage: npx ts-node solana.ts send <senderPrivateKey> <toAddress> [amount]'); process.exit(1); }
+export async function sendTransaction(senderSecret: string, recipientArg: string, amountArg?: string): Promise<{ Signature: string; time: string | null; from: string; to: string; amount: string; fee: string; currency: string; status: string; senderBalance?: number }> {
+  if (!recipientArg) throw new Error('recipient required');
   let recipientPubkey: PublicKey;
-  try { recipientPubkey = new PublicKey(recipientArg); } catch (e) { console.error('Invalid recipient address'); process.exit(1); }
+  try { recipientPubkey = new PublicKey(recipientArg); } catch (e) { throw new Error('Invalid recipient address'); }
   let sender: Keypair;
   try {
-    sender = parseSecretToKeypair(senderSecretOrFile);
+    sender = parseSecretToKeypair(senderSecret);
   } catch (e: any) {
-    console.error('Failed to load sender key:', e?.message ?? e);
-    process.exit(1);
+    throw new Error('Failed to load sender key: ' + (e?.message ?? e));
   }
   const amountSOL = Number(amountArg) || 0.1;
   const requiredLamports = Math.floor(amountSOL * LAMPORTS_PER_SOL);
   const conn = getConnection();
   let current = await conn.getBalance(sender.publicKey);
   if (current < requiredLamports) {
-    console.error('Insufficient balance and airdrop/faucet functionality has been removed. Please fund the sender account and try again.');
-    process.exit(1);
+    throw new Error('Insufficient balance and airdrop/faucet functionality has been removed. Please fund the sender account and try again.');
   }
   const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: sender.publicKey, toPubkey: recipientPubkey, lamports: requiredLamports }));
   const sig = await sendAndConfirmTransaction(conn, tx, [sender]);
-  console.log(`Sent ${amountSOL} SOL to ${recipientPubkey.toBase58()}, signature:`, sig);
-  console.log('Sender balance:', (await conn.getBalance(sender.publicKey)) / LAMPORTS_PER_SOL, 'SOL');
+
+  // Try to fetch parsed transaction to get time, fee and status
+  let parsed: any = null;
+  try {
+    parsed = await conn.getParsedTransaction(sig, 'confirmed');
+  } catch (e) {
+    // ignore
+  }
+
+  const time = parsed?.blockTime ? new Date(parsed.blockTime * 1000).toISOString() : null;
+  const fee = parsed?.meta?.fee ? String(parsed.meta.fee / LAMPORTS_PER_SOL) : '0';
+  const status = parsed?.meta ? (parsed.meta.err ? 'failed' : 'confirmed') : 'pending';
+  const newBal = await conn.getBalance(sender.publicKey);
+
+  return {
+    Signature: sig,
+    time,
+    from: sender.publicKey.toBase58(),
+    to: recipientPubkey.toBase58(),
+    amount: String(amountSOL),
+    fee,
+    currency: 'SOL',
+    status,
+    senderBalance: newBal / LAMPORTS_PER_SOL,
+  };
 }
 
-
+// Helper to get transactions for an address
 export async function getTxs(address: string, limitArg = '1000') {
   if (!address) { console.error('Usage: npx ts-node solana.ts txs <address> [limit]'); process.exit(1); }
   let pub: PublicKey;
@@ -247,6 +244,19 @@ export async function getTxs(address: string, limitArg = '1000') {
       // keep original amount string if conversion fails
     }
 
+    // Determine post-transaction balance for the requested address (if available)
+    let balanceAfter: string | null = null;
+    try {
+      if (parsed && parsed.transaction?.message?.accountKeys) {
+        const accountKeys = parsed.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey));
+        const post = parsed?.meta?.postBalances || [];
+        const idx2 = accountKeys.indexOf(address);
+        if (idx2 >= 0 && post[idx2] !== undefined) balanceAfter = String(post[idx2] / LAMPORTS_PER_SOL);
+      }
+    } catch (e) {
+      // ignore if unable to determine balance
+    }
+
     txs.push({
       Signature: s.signature,
       time,
@@ -255,7 +265,8 @@ export async function getTxs(address: string, limitArg = '1000') {
       amount: amountSol,
       fee: String(fee),
       currency: 'SOL',
-      status: status === 'failed' ? 'failed' : 'confirmed'
+      status: status === 'failed' ? 'failed' : 'confirmed',
+      balance: balanceAfter
     });
   }
   const out = { address, network: 'devnet', txs };

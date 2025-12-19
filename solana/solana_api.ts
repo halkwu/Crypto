@@ -1,13 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import { Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram, sendAndConfirmTransaction } from '@solana/web3.js';
-import { getConnection, getBalanceObject, parseSecretToKeypair, generateKeypairs, saveWallets, getTxs } from './solana';
+import {getBalanceObject, generateKeypairs, saveWallets, getTxs, sendTransaction } from './solana';
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// GET /balance - get balance for an address
 app.get('/balance', async (req, res) => {
   const address = String(req.query.address || '');
   if (!address) return res.status(400).json({ error: 'address required' });
@@ -19,13 +19,21 @@ app.get('/balance', async (req, res) => {
   }
 });
 
+// GET /txs - get transactions for an address, optional limit
 app.get('/txs', async (req, res) => {
   const address = String(req.query.address || '');
   const limit = req.query.limit || undefined;
   if (!address) return res.status(400).json({ error: 'address required' });
   try {
     const out = await getTxs(address, limit ? String(limit) : undefined);
-    return res.json(out);
+    // Normalize to { address, network, transaction: [...] } to match ethvm API
+    const txsArray = Array.isArray((out as any).txs)
+      ? (out as any).txs
+      : Array.isArray((out as any).transaction)
+      ? (out as any).transaction
+      : [];
+    const result = { address: (out as any).address || address, network: (out as any).network || 'devnet', transaction: txsArray };
+    return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? e });
   }
@@ -51,26 +59,14 @@ app.post('/generate', async (req, res) => {
   }
 });
 
+// POST /send - send SOL from sender to recipient
 app.post('/send', async (req, res) => {
-  const { senderSecret, to, amount = '0.1' } = req.body || {};
+  const { senderSecret, to, amount } = req.body || {};
   if (!to) return res.status(400).json({ error: 'recipient `to` is required' });
   if (!senderSecret) return res.status(400).json({ error: 'sender private key `senderSecret` is required (JSON array or comma-separated numbers)' });
   try {
-    const senderKeypair = parseSecretToKeypair(String(senderSecret));
-
-    const conn = getConnection();
-    const amountSOL = Number(amount) || 0.1;
-    const lamports = Math.floor(amountSOL * LAMPORTS_PER_SOL);
-    let current = await conn.getBalance(senderKeypair.publicKey);
-    if (current < lamports) {
-      return res.status(400).json({ error: 'insufficient balance; airdrop/faucet functionality is disabled' });
-    }
-
-    const recipient = new PublicKey(String(to));
-    const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey: senderKeypair.publicKey, toPubkey: recipient, lamports }));
-    const sig = await sendAndConfirmTransaction(conn, tx, [senderKeypair]);
-    const newBal = await conn.getBalance(senderKeypair.publicKey);
-    return res.json({ hash: sig, from: senderKeypair.publicKey.toBase58(), to: recipient.toBase58(), amount: amountSOL, senderBalance: newBal / LAMPORTS_PER_SOL });
+    const result = await sendTransaction(String(senderSecret), String(to), amount ? String(amount) : undefined);
+    return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? e });
   }

@@ -1,0 +1,17 @@
+{
+  "generated": 2,
+  "wallets": [
+    {
+      "label": "demo-wallets-1",
+      "address": "tb1q7mshn8tz4tplzylr2uvxq75pf30qe3t602m3z6",
+      "PrivateKey": "cUku8hWAsw7QALPJTN6z2DBEsVc2nQug9WoYnLZ1Gcg1nuEuy8vc",
+      "createdAt": "2025-12-19T05:58:03.517Z"
+    },
+    {
+      "label": "demo-wallets-2",
+      "address": "tb1qewl5wdakc79re6d2nct93xtthw5zvzy0usdep4",
+      "PrivateKey": "cQwwVyj3AiptZPyPwDc3zciH6ndYAFJceQo6QhWDfEruEz7hszgi",
+      "createdAt": "2025-12-19T05:58:03.518Z"
+    }
+  ]
+}
