@@ -2,6 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import { Wallet, providers, utils, BigNumber } from 'ethers';
 
+// Basic Ethereum address validation helper
+export function isValidAddress(address: string | undefined | null) {
+  if (!address || typeof address !== 'string') return false;
+  try {
+    return utils.isAddress(address);
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * =========================
  * Config & Types
@@ -272,6 +282,7 @@ export interface SendResult {
 
 export async function sendTransaction(fromPrivateKey: string, to: string, amount: string, network = 'sepolia'): Promise<SendResult> {
   if (!amount || String(amount).trim() === '') throw new Error('amount is required');
+  if (!isValidAddress(to)) throw new Error('invalid recipient address format');
   const apiKey = process.env.ETHERSCAN_API_KEY;
   const provider = apiKey
     ? providers.getDefaultProvider(network || 'sepolia', { etherscan: apiKey })
@@ -348,6 +359,7 @@ export async function sendTransaction(fromPrivateKey: string, to: string, amount
 
 // Reusable helper for other modules (REST API) to get formatted balance
 export async function queryBalance(address: string): Promise<{ address: string; network: string; balance: string;  currency: string; }> {
+  if (!isValidAddress(address)) throw new Error('invalid address format');
   const rpc = process.env.ALCHEMY_SEPOLIA_RPC || process.env.ALCHEMY_RPC || process.env.ALCHEMY_MAINNET_RPC;
   const provider = rpc ? new providers.JsonRpcProvider(rpc, 'sepolia') : providers.getDefaultProvider('sepolia', { etherscan: process.env.ETHERSCAN_API_KEY });
   const balance = await provider.getBalance(address);
@@ -358,6 +370,7 @@ export async function queryBalance(address: string): Promise<{ address: string; 
 // Reusable transaction query for other modules
 export async function queryTransactions(address: string): Promise<any[]> {
   if (!address) throw new Error('address required');
+  if (!isValidAddress(address)) throw new Error('invalid address format');
 
   const apiKey = process.env.ETHERSCAN_API_KEY;
   const rpc = process.env.ALCHEMY_SEPOLIA_RPC || process.env.ALCHEMY_RPC || process.env.ALCHEMY_MAINNET_RPC;

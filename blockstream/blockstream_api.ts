@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import { queryBalance, generateWallet, queryTransactions, sendTransaction, saveWallets } from './blockstream';
+import { queryBalance, generateWallet, queryTransactions, sendTransaction, saveWallets, isValidAddress } from './blockstream';
 
 const app = express();
 app.use(cors());
@@ -11,6 +11,7 @@ app.use(bodyParser.json());
 app.get('/balance', async (req, res) => {
   const address = String(req.query.address || '');
   if (!address) return res.status(400).json({ error: 'address required' });
+  if (!isValidAddress(address)) return res.status(400).json({ error: 'invalid address format' });
   try {
     const result = await queryBalance(address);
     return res.json(result);
@@ -24,6 +25,7 @@ app.get('/txs', async (req, res) => {
   const address = String(req.query.address || '');
   const limit = req.query.limit || undefined;
   if (!address) return res.status(400).json({ error: 'address required' });
+  if (!isValidAddress(address)) return res.status(400).json({ error: 'invalid address format' });
   try {
     const result = await queryTransactions(address, limit ? Number(limit) : undefined);
     // Return normalized shape { address, network, transaction }
@@ -57,6 +59,7 @@ app.post('/generate', async (req, res) => {
 app.post('/send', async (req, res) => {
   const { to, amount, feeRate, wif } = req.body || {};
   if (!to) return res.status(400).json({ error: 'recipient `to` is required' });
+  if (!isValidAddress(String(to))) return res.status(400).json({ error: 'invalid recipient address format' });
   if (!amount) return res.status(400).json({ error: 'amount is required' });
   if (!wif) return res.status(400).json({ error: 'wif (private key) is required' });
   try {

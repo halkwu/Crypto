@@ -59,21 +59,24 @@ Each submodule exposes REST endpoints in the example API:
 
 - Query balance / txs (PowerShell example):
 
+Blockstream port:3000
+EthVM port:3001
+solana port: 3002
 ```powershell
-Invoke-RestMethod "http://localhost:3000/balance?address=YourAddress" | ConvertTo-Json
-Invoke-RestMethod "http://localhost:3000/txs?address=YourAddress" | ConvertTo-Json
+Invoke-RestMethod "http://localhost:port/balance?address=YourAddress" | ConvertTo-Json
+Invoke-RestMethod "http://localhost:port/txs?address=YourAddress" | ConvertTo-Json
 ```
 
 - Generate wallets (POST):
 
 ```powershell
-Invoke-RestMethod -Uri 'http://localhost:3000/generate' -Method POST -Body (ConvertTo-Json @{count=2; label='demo-wallets'; save=$true; outputPath='demo_wallets.json'}) -ContentType 'application/json'
+Invoke-RestMethod -Uri 'http://localhost:port/generate' -Method POST -Body (ConvertTo-Json @{count=2; label='demo-wallets'; save=$true; outputPath='demo_wallets.json'}) -ContentType 'application/json'
 ```
 
 - Send transaction (EVM example):
 
 ```powershell
-Invoke-RestMethod -Uri 'http://localhost:3000/send' -Method POST -Body (ConvertTo-Json @{ fromPrivateKey='0xYOUR_PRIVATE_KEY'; to='0xRECIPIENT'; amount='0.001' }) -ContentType 'application/json'
+Invoke-RestMethod -Uri 'http://localhost:port/send' -Method POST -Body (ConvertTo-Json @{ fromPrivateKey='0xYOUR_PRIVATE_KEY'; to='0xRECIPIENT'; amount='0.001' }) -ContentType 'application/json'
 ```
 
 

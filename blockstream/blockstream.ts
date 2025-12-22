@@ -12,6 +12,18 @@ const API_BASE = 'https://blockstream.info/testnet/api';
 
 const DEFAULT_WALLET_FILE = 'wallet.json';
 
+// Basic bitcoin testnet address validation helper
+export function isValidAddress(address: string) {
+  if (!address || typeof address !== 'string') return false;
+  try {
+    // bitcoinjs-lib will throw on unsupported/invalid address formats for the network
+    bitcoin.address.toOutputScript(address, bitcoin.networks.testnet);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 export type BTCWallet = {
   label?: string;
   address: string;
@@ -155,6 +167,7 @@ async function queryAddressUtxos(address: string) {
 }
 
 export async function queryBalance(address: string) {
+  if (!isValidAddress(address)) throw new Error('invalid address format');
   const utxos = await queryAddressUtxos(address);
   const sats = (utxos || []).reduce((acc: number, u: any) => acc + (u.value || 0), 0);
   const btc = Number(sats) / 1e8;
@@ -168,6 +181,7 @@ export async function queryBalance(address: string) {
 }
 
 export async function queryTransactions(address: string, limit = 10000): Promise<{ address: string; network: string; transaction: any[] }> {
+  if (!isValidAddress(address)) throw new Error('invalid address format');
   const url = `${API_BASE}/address/${address}/txs`;
   const resp = await axios.get(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
   const txs = resp.data || [];
@@ -316,6 +330,9 @@ export async function sendTransaction(senderWif: string, toAddress: string, amou
   const network = bitcoin.networks.testnet;
   if (!senderWif) throw new Error('WIF is required to sign the transaction');
   const keyPair = ECPair.fromWIF(senderWif, network);
+
+  // validate recipient address early
+  if (!isValidAddress(toAddress)) throw new Error('invalid recipient address format');
 
   // derive sender address from WIF (use p2wpkh when possible)
   const pubkeyBuffer = Buffer.from(keyPair.publicKey);

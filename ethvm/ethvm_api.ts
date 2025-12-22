@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import { queryBalance, queryTransactions, generateWallets, saveWallets, sendTransaction } from './ethvm';
+import { queryBalance, queryTransactions, generateWallets, saveWallets, sendTransaction, isValidAddress } from './ethvm';
 
 // local copy of fetchTransactions (mirrors ethvm/api.ts) to avoid runtime module resolution
 const app = express();
@@ -18,6 +18,7 @@ function isValidPrivateKey(k: string | undefined): k is string {
 app.get('/balance', async (req, res) => {
   const address = String(req.query.address || '');
   if (!address) return res.status(400).json({ error: 'address required' });
+  if (!isValidAddress(address)) return res.status(400).json({ error: 'invalid address format' });
   try {
     const info = await queryBalance(address);
     return res.json(info);
@@ -30,6 +31,7 @@ app.get('/balance', async (req, res) => {
 app.get('/txs', async (req, res) => {
   const address = String(req.query.address || '');
   if (!address) return res.status(400).json({ error: 'address required' });
+  if (!isValidAddress(address)) return res.status(400).json({ error: 'invalid address format' });
   try {
       const txs = await queryTransactions(address);
     // Return same shape as CLI: { address, network: 'Sepolia', transaction: [...] }
@@ -45,6 +47,7 @@ app.post('/send', async (req, res) => {
   const { fromPrivateKey, to, amount } = req.body || {};
   if (!fromPrivateKey || !to) return res.status(400).json({ error: 'fromPrivateKey and to are required' });
   if (!isValidPrivateKey(fromPrivateKey)) return res.status(400).json({ error: 'invalid private key format' });
+  if (!isValidAddress(String(to))) return res.status(400).json({ error: 'invalid recipient address format' });
   try {
     if (!amount || String(amount).trim() === '') return res.status(400).json({ error: 'amount is required' });
     const result = await sendTransaction(fromPrivateKey, to, String(amount));

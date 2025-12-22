@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import {getBalanceObject, generateKeypairs, saveWallets, getTxs, sendTransaction } from './solana';
+import {getBalanceObject, generateKeypairs, saveWallets, getTxs, sendTransaction, isValidAddress } from './solana';
 
 const app = express();
 app.use(cors());
@@ -11,6 +11,7 @@ app.use(bodyParser.json());
 app.get('/balance', async (req, res) => {
   const address = String(req.query.address || '');
   if (!address) return res.status(400).json({ error: 'address required' });
+  if (!isValidAddress(address)) return res.status(400).json({ error: 'invalid address format' });
   try {
     const out = await getBalanceObject(address);
     return res.json(out);
@@ -24,6 +25,7 @@ app.get('/txs', async (req, res) => {
   const address = String(req.query.address || '');
   const limit = req.query.limit || undefined;
   if (!address) return res.status(400).json({ error: 'address required' });
+  if (!isValidAddress(address)) return res.status(400).json({ error: 'invalid address format' });
   try {
     const out = await getTxs(address, limit ? String(limit) : undefined);
     // Normalize to { address, network, transaction: [...] } to match ethvm API
@@ -63,6 +65,7 @@ app.post('/generate', async (req, res) => {
 app.post('/send', async (req, res) => {
   const { senderSecret, to, amount } = req.body || {};
   if (!to) return res.status(400).json({ error: 'recipient `to` is required' });
+  if (!isValidAddress(String(to))) return res.status(400).json({ error: 'invalid recipient address format' });
   if (!senderSecret) return res.status(400).json({ error: 'sender private key `senderSecret` is required (JSON array or comma-separated numbers)' });
   try {
     const result = await sendTransaction(String(senderSecret), String(to), amount ? String(amount) : undefined);

@@ -55,6 +55,19 @@ if (require.main === module) main().catch((e) => { console.error(e); process.exi
 
 export function getConnection() { return new Connection(clusterApiUrl("devnet"), "confirmed"); }
 
+// Basic Solana address validation helper
+export function isValidAddress(address: string | undefined | null) {
+  if (!address || typeof address !== 'string') return false;
+  try {
+    // PublicKey constructor will throw for invalid base58 or wrong length
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const p = new PublicKey(address);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 export interface SolanaWalletInfo {
   label: string;
   address: string;
@@ -114,8 +127,8 @@ export function parseSecretToKeypair(secret: string): Keypair {
 // `getBalance` CLI helper removed. Use `getBalanceValue` for programmatic access.
 async function getBalanceValue(address: string): Promise<number> {
   if (!address) throw new Error('address required');
-  let pub: PublicKey;
-  try { pub = new PublicKey(address); } catch (e) { throw new Error('Invalid address'); }
+  if (!isValidAddress(address)) throw new Error('invalid address format');
+  let pub: PublicKey = new PublicKey(address);
   const conn = getConnection();
   const bal = await conn.getBalance(pub);
   return bal / LAMPORTS_PER_SOL;
@@ -135,8 +148,8 @@ export async function getBalanceObject(address: string): Promise<{ address: stri
 
 export async function sendTransaction(senderSecret: string, recipientArg: string, amountArg?: string): Promise<{ Signature: string; time: string | null; from: string; to: string; amount: number; fee: number; currency: string; status: string; balance?: number }> {
   if (!recipientArg) throw new Error('recipient required');
-  let recipientPubkey: PublicKey;
-  try { recipientPubkey = new PublicKey(recipientArg); } catch (e) { throw new Error('Invalid recipient address'); }
+  if (!isValidAddress(recipientArg)) throw new Error('invalid recipient address format');
+  const recipientPubkey: PublicKey = new PublicKey(recipientArg);
   let sender: Keypair;
   try {
     sender = parseSecretToKeypair(senderSecret);
@@ -181,9 +194,9 @@ export async function sendTransaction(senderSecret: string, recipientArg: string
 
 // Helper to get transactions for an address
 export async function getTxs(address: string, limitArg = '1000') {
-  if (!address) { console.error('Usage: npx ts-node solana.ts txs <address> [limit]'); process.exit(1); }
-  let pub: PublicKey;
-  try { pub = new PublicKey(address); } catch (e) { console.error('Invalid address'); process.exit(1); }
+  if (!address) throw new Error('address required');
+  if (!isValidAddress(address)) throw new Error('invalid address format');
+  const pub: PublicKey = new PublicKey(address);
   const limit = Number(limitArg) || 1000;
   const conn = getConnection();
   const sigs = await conn.getSignaturesForAddress(pub, { limit });
