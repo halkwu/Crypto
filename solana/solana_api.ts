@@ -48,7 +48,7 @@ app.post('/generate', async (req, res) => {
     if (save || outputPath) {
       try {
         const p = saveWallets(wallets, outputPath || 'wallet.json');
-        return res.json({ generated: wallets.length, wallets, path: p });
+        return res.json({ generated: wallets.length, wallets});
       } catch (err: any) {
         return res.status(500).json({ error: 'failed to save wallets', detail: err?.message ?? err });
       }
@@ -73,7 +73,7 @@ app.post('/send', async (req, res) => {
 });
 
 
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || 3002);
 app.listen(port, () => console.log(`Solana REST API listening on http://localhost:${port}`));
 
 export default app;

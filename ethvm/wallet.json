@@ -1,0 +1,12 @@
+{
+  "generated": 1,
+  "wallets": [
+    {
+      "label": "sepolia-wallet",
+      "address": "0xccbA3eb62E65e3eEbFDe6C7D6a5eD205B27e60D6",
+      "privateKey": "0x0b3acf0a1dfc498e777a419d63a1c44221dd2ccae1cf376ff70048fbb3109552",
+      "mnemonic": "spider vendor atom icon gauge say bus flight canvas donor now brave",
+      "createdAt": "2025-12-22T00:22:31.619Z"
+    }
+  ]
+}

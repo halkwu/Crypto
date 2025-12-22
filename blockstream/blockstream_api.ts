@@ -41,8 +41,8 @@ app.post('/generate', async (req, res) => {
     const wallets = generateWallet(n, label || 'btc-wallet');
     if (save || outputPath) {
       try {
-        const p = saveWallets(wallets, outputPath || 'wallet.json');
-        return res.json({ generated: wallets.length, wallets, path: p });
+        saveWallets(wallets, outputPath || 'wallet.json');
+        return res.json({ generated: wallets.length, wallets });
       } catch (err: any) {
         return res.status(500).json({ error: 'failed to save wallets', detail: err?.message ?? err });
       }

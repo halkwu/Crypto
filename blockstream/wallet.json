@@ -1,0 +1,11 @@
+{
+  "generated": 1,
+  "wallets": [
+    {
+      "label": "btc-wallet",
+      "address": "tb1q58hqzndjsgqj7ztlxfxe26p83xrqts5ep6tr4d",
+      "PrivateKey": "cSRr5hibojRNcSq6QdLcwXfSGjBHHzF8xXMLbZTbVUE3AFaVVCdg",
+      "createdAt": "2025-12-22T00:18:01.541Z"
+    }
+  ]
+}

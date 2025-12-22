@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { Wallet, providers, utils, BigNumber } from 'ethers';
-import * as readline from 'readline';
 
 /**
  * =========================
@@ -112,29 +111,8 @@ class EthereumWalletManager {
       if (!toAddr) {
         throw new Error('Missing recipient address: provide --to <address>');
       }
-
-      // If running interactively and amount not provided, prompt the user until provided
-      if ((!amount || String(amount).trim() === '') && process.stdin.isTTY) {
-        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        amount = await new Promise<string>((resolve) => {
-          const ask = () => {
-            rl.question('Amount (ETH) to send: ', (ans) => {
-              const v = ans && ans.trim();
-              if (v) {
-                rl.close();
-                resolve(v);
-              } else {
-                console.log('Amount is required.');
-                ask();
-              }
-            });
-          };
-          ask();
-        });
-      }
-
       if (!amount || String(amount).trim() === '') throw new Error('Missing amount: provide --amount <eth>');
-
+      
       const result = await sendTransaction(fromKey, toAddr, String(amount), this.config.network);
       console.log(JSON.stringify(result, null, 2));
       return result;
@@ -266,7 +244,7 @@ export async function generateWallets(count: number, label = 'sepolia-wallet'): 
       mnemonic: w.mnemonic?.phrase ?? null,
       createdAt: new Date().toISOString(),
     });
-    console.log(`[${i + 1}/${count}] ${w.address}`);
+    console.log(`Generated ${w.address}`);
   }
   return wallets;
 }
@@ -276,7 +254,7 @@ export function saveWallets(wallets: WalletInfo[], outputPath = 'wallet.json'): 
   const output: WalletOutput = { generated: wallets.length, wallets };
   const p = path.resolve(process.cwd(), outputPath);
   fs.writeFileSync(p, JSON.stringify(output, null, 2), 'utf8');
-  console.log(`\nSaved to ${p}`);
+  console.log(`Saved ${wallets.length} wallet(s) to ${p}`);
 }
 
 // Exported reusable sendTransaction for external use (returns hash and optional receipt)
@@ -285,11 +263,11 @@ export interface SendResult {
   time: string | null;
   from: string;
   to: string;
-  amount: number | string;
-  fee: number | string;
+  amount: number;
+  fee: number | null;
   currency: string;
   status: 'pending' | 'confirmed' | 'failed' | 'unknown';
-  senderBalance?: number | string;
+  balance?: number | null;
 }
 
 export async function sendTransaction(fromPrivateKey: string, to: string, amount: string, network = 'sepolia'): Promise<SendResult> {
@@ -342,12 +320,12 @@ export async function sendTransaction(fromPrivateKey: string, to: string, amount
   }
 
   // get sender balance after tx
-  let senderBalanceStr: string | null = null;
+  let balanceStr: string | null = null;
   try {
     const bal = await provider.getBalance(sender.address);
-    senderBalanceStr = utils.formatEther(bal);
+    balanceStr = utils.formatEther(bal);
   } catch (e) {
-    senderBalanceStr = null;
+    balanceStr = null;
   }
 
   const result: SendResult = {
@@ -357,12 +335,12 @@ export async function sendTransaction(fromPrivateKey: string, to: string, amount
     to,
     amount: (() => {
       const n = Number(amtStr);
-      return Number.isFinite(n) ? n : amtStr;
+      return Number.isFinite(n) ? n : parseFloat(amtStr) || 0;
     })(),
-    fee: feeStr ? Number(feeStr) : 'unknown',
+    fee: feeStr && !isNaN(Number(feeStr)) ? Number(feeStr) : null,
     currency: 'ETH',
     status,
-    senderBalance: senderBalanceStr ? Number(senderBalanceStr) : 'unknown',
+    balance: balanceStr && !isNaN(Number(balanceStr)) ? Number(balanceStr) : null,
   };
 
   return result;
@@ -374,7 +352,7 @@ export async function queryBalance(address: string): Promise<{ address: string; 
   const provider = rpc ? new providers.JsonRpcProvider(rpc, 'sepolia') : providers.getDefaultProvider('sepolia', { etherscan: process.env.ETHERSCAN_API_KEY });
   const balance = await provider.getBalance(address);
   const formatted = utils.formatEther(balance);
-  return { address, network: 'Sepolia', balance: `${formatted}`, currency: 'ETH' };
+  return { address, network: 'Sepolia', balance: Number(formatted), currency: 'ETH' } as any;
 }
 
 // Reusable transaction query for other modules
@@ -384,6 +362,15 @@ export async function queryTransactions(address: string): Promise<any[]> {
   const apiKey = process.env.ETHERSCAN_API_KEY;
   const rpc = process.env.ALCHEMY_SEPOLIA_RPC || process.env.ALCHEMY_RPC || process.env.ALCHEMY_MAINNET_RPC;
   const provider = rpc ? new providers.JsonRpcProvider(rpc, 'sepolia') : providers.getDefaultProvider('sepolia', { etherscan: apiKey });
+
+  // Get current account balance (used as the balance after the newest tx)
+  let currentBalanceNum = 0;
+  try {
+    const bal = await provider.getBalance(address);
+    currentBalanceNum = Number(utils.formatEther(bal));
+  } catch (e) {
+    currentBalanceNum = 0;
+  }
 
   // Try Etherscan first if API key available
     if (apiKey) {
@@ -402,6 +389,8 @@ export async function queryTransactions(address: string): Promise<any[]> {
     if (!data || data.status !== '1' || !Array.isArray(data.result)) return [];
 
     const out: any[] = [];
+    // Etherscan returns descending (newest first) when sort=desc — we treat index 0 as newest
+    let prevBalance = currentBalanceNum;
     for (let i = 0; i < Math.min(data.result.length, maxCount); i++) {
       const tx = data.result[i];
       const hash = tx.hash;
@@ -440,17 +429,35 @@ export async function queryTransactions(address: string): Promise<any[]> {
       } catch (e) {
         amountStr = tx.value ?? '0';
       }
+      const amountNum = Number(amountStr) || 0;
+      const feeNum = feeStr && feeStr !== 'unknown' && !isNaN(Number(feeStr)) ? Number(feeStr) : 0;
+
+      // balance for this transaction (balance after this tx) — start with newest = currentBalance
+      const thisBalance = prevBalance;
 
       out.push({
         Signature: hash,
         time: timeIso,
         from: tx.from,
         to: tx.to,
-        amount: amountStr,
-        fee: feeStr,
+        amount: amountNum,
+        fee: feeNum || null,
         currency: 'ETH',
         status: tx.isError === '0' ? 'confirmed' : 'failed',
+        balance: thisBalance,
       });
+
+      // compute balance for the next (older) transaction by reversing this tx
+      if (tx.from && tx.from.toLowerCase() === address.toLowerCase()) {
+        // sent from our address: older balance = thisBalance + amount + fee
+        prevBalance = thisBalance + amountNum + feeNum;
+      } else if (tx.to && tx.to.toLowerCase() === address.toLowerCase()) {
+        // received to our address: older balance = thisBalance - amount
+        prevBalance = thisBalance - amountNum;
+      } else {
+        // unrelated tx: assume balance unchanged
+        prevBalance = thisBalance;
+      }
     }
 
     return out;
@@ -469,7 +476,15 @@ export async function queryTransactions(address: string): Promise<any[]> {
     const r = await fetch(alchemy, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j: any = await r.json().catch(() => ({} as any));
     const transfers = j?.result?.transfers || [];
-    return transfers.slice(0, maxCount).map((t: any) => {
+    // Sort transfers by blockTimestamp desc (newest first) to match Etherscan behavior
+    const sorted = transfers
+      .slice()
+      .sort((a: any, b: any) => (b.metadata?.blockTimestamp ?? 0) - (a.metadata?.blockTimestamp ?? 0))
+      .slice(0, maxCount);
+
+    let prevBalanceA = currentBalanceNum;
+    const outA: any[] = [];
+    for (const t of sorted) {
       const raw = t.value ?? t.delta ?? '0';
       let amountStr = '0';
       try {
@@ -477,17 +492,31 @@ export async function queryTransactions(address: string): Promise<any[]> {
       } catch (e) {
         amountStr = raw;
       }
-      return {
+      const amountNum = Number(amountStr) || 0;
+
+      const thisBalance = prevBalanceA;
+      outA.push({
         Signature: t.hash || t.transactionHash,
         time: t.metadata?.blockTimestamp ? new Date(t.metadata.blockTimestamp).toISOString() : null,
         from: t.from,
         to: t.to,
-        amount: amountStr,
-        fee: 'unknown',
+        amount: amountNum,
+        fee: null,
         currency: 'ETH',
         status: 'unknown',
-      };
-    });
+        balance: thisBalance,
+      });
+
+      if (t.from && t.from.toLowerCase() === address.toLowerCase()) {
+        prevBalanceA = thisBalance + amountNum;
+      } else if (t.to && t.to.toLowerCase() === address.toLowerCase()) {
+        prevBalanceA = thisBalance - amountNum;
+      } else {
+        prevBalanceA = thisBalance;
+      }
+    }
+
+    return outA;
   }
 
   return [];

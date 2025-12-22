@@ -1,0 +1,92 @@
+"""
+Custom scalar for date/time representation
+"""
+scalar Date
+
+"""
+Result when querying an address balance via `queryBalance`
+"""
+type BalanceInfo {
+  address: String!
+  network: String!
+  balance: Float!
+  currency: String!
+}
+
+"""
+A simple transaction record returned by `queryTransactions`
+"""
+type Tx {
+  signature: ID!
+  time: Date
+  from: String
+  to: String
+  amount: Float
+  fee: Float
+  currency: String
+  status: String
+  balance: Float
+}
+
+"""
+Wrapper for transactions response (matches REST shape used in ethvm_api.ts)
+"""
+type TransactionsResponse {
+  address: String!
+  network: String!
+  transaction: [Tx!]!
+}
+
+"""
+Result of a send operation (matches `SendResult` from `ethvm.ts`)
+"""
+type SendResult {
+  signature: ID!
+  time: Date
+  from: String!
+  to: String!
+  amount: Float
+  fee: Float
+  currency: String
+  status: String
+  balance: Float
+}
+
+"""
+Wallet information produced by `generateWallets`
+"""
+type WalletInfo {
+  label: String!
+  address: String!
+  privateKey: String!
+  mnemonic: String
+  createdAt: Date!
+}
+
+type WalletOutput {
+  generated: Int!
+  wallets: [WalletInfo!]!
+}
+
+input GenerateWalletsInput {
+  count: Int = 1
+  label: String = "sepolia-wallet"
+  save: Boolean = false
+  outputPath: String
+}
+
+type Query {
+  # Get on-chain balance for an address
+  balance(address: String!): BalanceInfo!
+
+  # Get transactions for an address (returns the REST-shaped wrapper)
+  txs(address: String!): TransactionsResponse!
+}
+
+type Mutation {
+  # Send ETH from a private key to an address
+  send(fromPrivateKey: String!, to: String!, amount: String!): SendResult!
+
+  # Generate wallets, optionally save to disk
+  generateWallets(input: GenerateWalletsInput): WalletOutput!
+}

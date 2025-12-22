@@ -29,7 +29,8 @@ async function main() {
     switch (cmd) {
       case 'generate': {
         const wallets = generateKeypairs(1, argv[2] || 'solana-wallet');
-        console.log(JSON.stringify(wallets[0], null, 2));
+        const outputPath = argv[1] || 'wallet.json';
+        saveWallets(wallets, outputPath);
       } break;
       case 'balance': {
         const out = await getBalanceObject(argv[1]);
@@ -38,7 +39,7 @@ async function main() {
       case 'send': {
         const res = await sendTransaction(argv[1], argv[2], argv[3]);
         console.log(`Sent ${res.amount} SOL to ${res.to}, signature:`, res.Signature);
-        if (typeof res.senderBalance !== 'undefined') console.log('Sender balance:', res.senderBalance, 'SOL');
+        if (typeof res.balance !== 'undefined') console.log('balance:', res.balance, 'SOL');
       } break;
       case 'txs': await getTxs(argv[1], argv[2]); break;
       case 'help': await printHelp(); break;
@@ -121,18 +122,18 @@ async function getBalanceValue(address: string): Promise<number> {
 }
 
 // `getBalanceObject` CLI helper removed. Use `getBalanceObject` for programmatic access.
-export async function getBalanceObject(address: string): Promise<{ address: string; network: string; balance: string; currency: string }> {
+export async function getBalanceObject(address: string): Promise<{ address: string; network: string; balance: number; currency: string }> {
   const bal = await getBalanceValue(address);
   return {
     address,
     network: 'devnet',
-    balance: String(bal),
+    balance: bal,
     currency: 'SOL'
   };
 }
 
 
-export async function sendTransaction(senderSecret: string, recipientArg: string, amountArg?: string): Promise<{ Signature: string; time: string | null; from: string; to: string; amount: string; fee: string; currency: string; status: string; senderBalance?: number }> {
+export async function sendTransaction(senderSecret: string, recipientArg: string, amountArg?: string): Promise<{ Signature: string; time: string | null; from: string; to: string; amount: number; fee: number; currency: string; status: string; balance?: number }> {
   if (!recipientArg) throw new Error('recipient required');
   let recipientPubkey: PublicKey;
   try { recipientPubkey = new PublicKey(recipientArg); } catch (e) { throw new Error('Invalid recipient address'); }
@@ -161,7 +162,7 @@ export async function sendTransaction(senderSecret: string, recipientArg: string
   }
 
   const time = parsed?.blockTime ? new Date(parsed.blockTime * 1000).toISOString() : null;
-  const fee = parsed?.meta?.fee ? String(parsed.meta.fee / LAMPORTS_PER_SOL) : '0';
+  const fee = parsed?.meta?.fee ? parsed.meta.fee / LAMPORTS_PER_SOL : 0;
   const status = parsed?.meta ? (parsed.meta.err ? 'failed' : 'confirmed') : 'pending';
   const newBal = await conn.getBalance(sender.publicKey);
 
@@ -170,11 +171,11 @@ export async function sendTransaction(senderSecret: string, recipientArg: string
     time,
     from: sender.publicKey.toBase58(),
     to: recipientPubkey.toBase58(),
-    amount: String(amountSOL),
+    amount: amountSOL,
     fee,
     currency: 'SOL',
     status,
-    senderBalance: newBal / LAMPORTS_PER_SOL,
+    balance: newBal / LAMPORTS_PER_SOL,
   };
 }
 
@@ -185,18 +186,22 @@ export async function getTxs(address: string, limitArg = '1000') {
   try { pub = new PublicKey(address); } catch (e) { console.error('Invalid address'); process.exit(1); }
   const limit = Number(limitArg) || 1000;
   const conn = getConnection();
-
   const sigs = await conn.getSignaturesForAddress(pub, { limit });
   const txs: Array<any> = [];
+
+  // Get current balance (latest) and work backwards to infer prior balances
+  let lastBalanceLam = await conn.getBalance(pub);
+  const addrNorm = String(address).toLowerCase();
+
   for (const s of sigs) {
     const parsed = await conn.getParsedTransaction(s.signature, 'confirmed');
     const time = s.blockTime ? new Date(s.blockTime * 1000).toISOString() : null;
     const status = s.err ? 'failed' : 'confirmed';
-    const fee = parsed?.meta?.fee ? String(parsed.meta.fee / LAMPORTS_PER_SOL) : '0';
+    const feeLam = parsed?.meta?.fee ? Number(parsed.meta.fee) : 0;
 
     let from = '';
     let to = '';
-    let amount = '0';
+    let amountLamports = 0;
 
     // Try to extract from parsed instructions (system transfers, token transfers, etc.)
     try {
@@ -207,9 +212,9 @@ export async function getTxs(address: string, limitArg = '1000') {
           const info = p.parsed.info;
           if (info.source || info.from) from = info.source || info.from;
           if (info.destination || info.to) to = info.destination || info.to;
-          if (info.lamports !== undefined) amount = String(info.lamports);
-          if (info.amount !== undefined) amount = String(info.amount);
-          if (from || to || amount !== '0') break;
+          if (info.lamports !== undefined) amountLamports = Number(info.lamports) || 0;
+          if (info.amount !== undefined) amountLamports = Number(info.amount) || amountLamports;
+          if (from || to || amountLamports !== 0) break;
         }
       }
     } catch (e) {
@@ -217,45 +222,45 @@ export async function getTxs(address: string, limitArg = '1000') {
     }
 
     // Fallback: infer amount using pre/post balances and account key positions
-    if ((amount === '0' || !from || !to) && parsed?.meta && parsed.transaction?.message?.accountKeys) {
-      const accountKeys = parsed.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey));
-      const pre = parsed.meta.preBalances || [];
-      const post = parsed.meta.postBalances || [];
-      const idx = accountKeys.indexOf(address);
-      if (idx >= 0 && pre[idx] !== undefined && post[idx] !== undefined) {
-        const diff = post[idx] - pre[idx];
-        amount = String(Math.abs(diff));
-        if (diff > 0) { from = accountKeys.find((k: string) => k !== address) || ''; to = address; }
-        else { from = address; to = accountKeys.find((k: string) => k !== address) || ''; }
-      } else {
-        from = accountKeys[0] || '';
-        to = accountKeys[1] || '';
-      }
-    }
-
-    // Convert amount (likely lamports) to SOL when numeric; otherwise leave as-is
-    let amountSol = String(amount);
     try {
-      const n = Number(amount);
-      if (!Number.isNaN(n)) {
-        amountSol = String(n / LAMPORTS_PER_SOL);
+      if ((amountLamports === 0 || !from || !to) && parsed?.meta && parsed.transaction?.message?.accountKeys) {
+        const accountKeys = parsed.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey));
+        const pre = parsed.meta.preBalances || [];
+        const post = parsed.meta.postBalances || [];
+        const idx = accountKeys.indexOf(address);
+        if (idx >= 0 && pre[idx] !== undefined && post[idx] !== undefined) {
+          const diff = post[idx] - pre[idx];
+          amountLamports = Math.abs(diff);
+          if (diff > 0) { from = accountKeys.find((k: string) => k !== address) || ''; to = address; }
+          else { from = address; to = accountKeys.find((k: string) => k !== address) || ''; }
+        } else {
+          from = accountKeys[0] || '';
+          to = accountKeys[1] || '';
+        }
       }
     } catch (e) {
-      // keep original amount string if conversion fails
+      // ignore
     }
 
-    // Determine post-transaction balance for the requested address (if available)
-    let balanceAfter: string | null = null;
+    // Determine balance after this transaction.
+    // For the newest tx (first loop) `lastBalanceLam` is current on-chain balance.
+    // If this parsed tx provides a postBalance for the address, prefer it; otherwise use lastBalanceLam.
+    let balanceAfterLam: number | null = null;
     try {
       if (parsed && parsed.transaction?.message?.accountKeys) {
         const accountKeys = parsed.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey));
         const post = parsed?.meta?.postBalances || [];
         const idx2 = accountKeys.indexOf(address);
-        if (idx2 >= 0 && post[idx2] !== undefined) balanceAfter = String(post[idx2] / LAMPORTS_PER_SOL);
+        if (idx2 >= 0 && post[idx2] !== undefined) balanceAfterLam = Number(post[idx2]);
       }
     } catch (e) {
-      // ignore if unable to determine balance
+      // ignore
     }
+    if (balanceAfterLam === null) balanceAfterLam = lastBalanceLam;
+
+    // Convert amount to SOL for output
+    const amountSol = (amountLamports && !Number.isNaN(amountLamports)) ? amountLamports / LAMPORTS_PER_SOL : 0;
+    const feeSol = feeLam / LAMPORTS_PER_SOL;
 
     txs.push({
       Signature: s.signature,
@@ -263,12 +268,46 @@ export async function getTxs(address: string, limitArg = '1000') {
       from: (from || '').toLowerCase(),
       to: (to || '').toLowerCase(),
       amount: amountSol,
-      fee: String(fee),
+      fee: feeSol,
       currency: 'SOL',
       status: status === 'failed' ? 'failed' : 'confirmed',
-      balance: balanceAfter
+      balance: balanceAfterLam !== null ? balanceAfterLam / LAMPORTS_PER_SOL : null
     });
+
+    // Derive the balance that existed before this transaction (for the next, older tx)
+    // Rule: if this (newer) tx `from` == address then the previous balance = after_balance + fee + amount
+    //       if this (newer) tx `to` == address then previous balance = after_balance - amount
+    // Otherwise, if preBalances available for this tx, use that; else keep lastBalance same.
+    let prevBalanceLam: number | null = null;
+    try {
+      const fromNorm = (from || '').toLowerCase();
+      const toNorm = (to || '').toLowerCase();
+      if (fromNorm === addrNorm) {
+        prevBalanceLam = Math.floor((balanceAfterLam || 0) + feeLam + (amountLamports || 0));
+      } else if (toNorm === addrNorm) {
+        prevBalanceLam = Math.floor((balanceAfterLam || 0) - (amountLamports || 0));
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    if (prevBalanceLam === null) {
+      try {
+        if (parsed && parsed.transaction?.message?.accountKeys) {
+          const accountKeys = parsed.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey));
+          const pre = parsed?.meta?.preBalances || [];
+          const idx3 = accountKeys.indexOf(address);
+          if (idx3 >= 0 && pre[idx3] !== undefined) prevBalanceLam = Number(pre[idx3]);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (prevBalanceLam === null) prevBalanceLam = balanceAfterLam || 0;
+    lastBalanceLam = prevBalanceLam;
   }
+
   const out = { address, network: 'devnet', txs };
   console.log(JSON.stringify(out, null, 2));
   return out;

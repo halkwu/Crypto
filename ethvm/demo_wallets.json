@@ -3,17 +3,17 @@
   "wallets": [
     {
       "label": "demo-wallets-1",
-      "address": "0x80dB6d708C01ff4f1fF9ED435650650Ab401E27C",
-      "privateKey": "0x64c011bc89cbbe379701d178991b0855acbdb44922a54c5845127e5a3a0adb1e",
-      "mnemonic": "stadium sweet bridge dose power insect broccoli sing picnic weasel crazy fog",
-      "createdAt": "2025-12-18T01:45:47.552Z"
+      "address": "0x2c7E4d7B81f094214835A3FBe17746dc81D8315F",
+      "privateKey": "0xe816ad4525118a8e280f43490a0bbce58f99515f99cba458e30b2cd786b6e90d",
+      "mnemonic": "twist fortune view alone tilt point relax angry mother shop peace poet",
+      "createdAt": "2025-12-22T04:02:07.034Z"
     },
     {
       "label": "demo-wallets-2",
-      "address": "0x910217b56b65b4329b66b0Af967147564ac85ae9",
-      "privateKey": "0x88642c3b08504679fb140450dc5f05492f2ece2a54d55bb0a255a622b337791e",
-      "mnemonic": "poet embody verify fringe deputy era robust board obvious have tone bachelor",
-      "createdAt": "2025-12-18T01:45:47.577Z"
+      "address": "0xB93B36b44A7aC27393E97ce8E0ffd90d55Be718C",
+      "privateKey": "0x3912c8a0af9298c61db508dffdd4fa73b7ce7a73426b69c11ab1ee978973193c",
+      "mnemonic": "culture evil danger pass reward arena urban horror critic direct laundry salt",
+      "createdAt": "2025-12-22T04:02:07.060Z"
     }
   ]
 }
