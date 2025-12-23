@@ -11,48 +11,6 @@ import {
   PublicKey
 } from "@solana/web3.js";
 
-export async function printHelp() {
-  console.log(`Usage: npx ts-node solana.ts <command> [args]\n
-Commands:
-  balance <address>                      Print address balance (SOL) only
-  txs <address> [limit]                  Show recent transactions for address
-  generate [outputPath] [label]          Generate a new wallet and save to JSON (default: wallet.json, solana-wallet)
-  send <senderPrivateKey> <RECIPIENT_ADDRESS> [amount]   Send SOL from sender to recipient (provide private key as a JSON array string or comma-separated numbers, e.g. "[1,2,3,...]")
-  help                                   Show this help
-`);
-}
-
-async function main() {
-  const argv = process.argv.slice(2);
-  const cmd = argv[0];
-  try {
-    switch (cmd) {
-      case 'generate': {
-        const wallets = generateKeypairs(1, argv[2] || 'solana-wallet');
-        const outputPath = argv[1] || 'wallet.json';
-        saveWallets(wallets, outputPath);
-      } break;
-      case 'balance': {
-        const out = await getBalanceObject(argv[1]);
-        console.log(JSON.stringify(out, null, 2));
-      } break;
-      case 'send': {
-        const res = await sendTransaction(argv[1], argv[2], argv[3]);
-        console.log(`Sent ${res.amount} SOL to ${res.to}, signature:`, res.Signature);
-        if (typeof res.balance !== 'undefined') console.log('balance:', res.balance, 'SOL');
-      } break;
-      case 'txs': await getTxs(argv[1], argv[2]); break;
-      case 'help': await printHelp(); break;
-      default: console.error('Unknown or missing command'); await printHelp(); process.exit(1);
-    }
-  } catch (e: any) {
-    console.error('Error:', e?.message ?? e);
-    process.exit(1);
-  }
-}
-
-if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
-
 export function getConnection() { return new Connection(clusterApiUrl("devnet"), "confirmed"); }
 
 // Basic Solana address validation helper

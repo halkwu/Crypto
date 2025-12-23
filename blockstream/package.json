@@ -4,7 +4,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "ts-node blocklstream.ts",
+    "start": "ts-node blockstream.ts",
+    "start:graphql": "ts-node blockstream_graphql.ts",
     "build": "tsc"
   },
   "dependencies": {
@@ -12,6 +13,8 @@
     "bitcoinjs-lib": "^6.1.0",
     "body-parser": "^2.2.1",
     "cors": "^2.8.5",
+    "apollo-server-express": "^3.11.1",
+    "graphql": "^15.8.0",
     "ecpair": "^2.1.0",
     "express": "^5.2.1",
     "tiny-secp256k1": "^2.2.4"

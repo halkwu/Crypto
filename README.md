@@ -1,4 +1,4 @@
-# Multi-Chain Toolkit (Blockstream / EthVM / Solana + Angular UI)
+# Multi-Chain Toolkit (Blockstream / EthVM / Solana)
 
 This repository contains several subprojects for demonstrating and testing multi-chain features: Bitcoin (blockstream), EVM-like chains (ethvm), Solana (solana), an Angular frontend (angular-ui), and a simple API aggregator example (api).
 
@@ -82,7 +82,49 @@ Invoke-RestMethod -Uri 'http://localhost:port/send' -Method POST -Body (ConvertT
 
 **GraphQL**
 
-A merged `schema.graphql` is provided at the repository root. It combines the three schemas (`blockstream` / `ethvm` / `solana`) and uses module prefixes for Query/Mutation fields to avoid naming collisions. You can mount resolvers for each module in any GraphQL server based on this schema.
+A merged `schema.graphql` is provided at the repository root. It combines the three schemas (`blockstream`, `ethvm`, and `solana`) into a single schema file: [schema.graphql](schema.graphql).
+
+Below are notes and a small example for running a module-level GraphQL server (Solana) that uses the merged schema and proxies queries to the example REST backend.
+
+- **Example implementation**: The Solana example GraphQL server is implemented in `solana/solana_graphql.ts`. That script loads the top-level `schema.graphql`, defines `Date` and `JSON` custom scalars, and implements resolvers that proxy `balance` and `txs` queries to the REST API (default REST base: `http://localhost:3002`).
+
+- **Install dependencies**:
+
+```bash
+cd solana
+npm install
+```
+
+- **Run the example GraphQL server (Solana)**:
+
+```bash
+cd solana
+npx ts-node solana_graphql.ts
+```
+
+The server starts an Apollo/Express GraphQL endpoint on port `4002` by default (override with the `PORT` environment variable). The server logs the GraphQL URL and the `REST_BASE` it is proxying to.
+
+- **Configuration**:
+	- `REST_BASE` — REST backend base URL that resolvers proxy to (default: `http://localhost:3002`).
+	- `PORT` — GraphQL server port (default: `4002`).
+	See `solana/package.json` for runtime dependencies such as `apollo-server-express` and `graphql`.
+
+- **Sample GraphQL query**:
+
+```graphql
+query GetBalance {
+	balance(address: "YourAddressHere") {
+		address
+		network
+		balance
+		currency
+	}
+}
+```
+
+The `balance` and `txs` resolvers in `solana/solana_graphql.ts` forward requests to the REST endpoints (for example `/balance?address=...`), handle upstream errors, and return structured GraphQL responses.
+
+If you want a unified GraphQL server for all modules, mount each module's resolvers on a single ApolloServer instance while using the merged `schema.graphql` as the type definitions.
 
 **Notes and recommendations**
 

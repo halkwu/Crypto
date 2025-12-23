@@ -1,23 +1,15 @@
-# Root GraphQL schema generated from blockstream, ethvm, and solana schemas
-
-# Shared scalar
+"""
+Custom scalar for date representation
+"""
 scalar Date
 
-# ------------------------
-# Blockstream types (source: blockstream/schema.graphql)
-# ------------------------
 """
-Represents a generated BTC wallet entry
+Arbitrary JSON passthrough scalar used by resolvers
 """
-type BTCWallet {
-  label: String
-  address: String!
-  PrivateKey: String!
-  createdAt: Date!
-}
+scalar JSON
 
 """
-Balance result returned by `queryBalance`
+Balance result returned
 """
 type Balance {
   address: String!
@@ -27,7 +19,7 @@ type Balance {
 }
 
 """
-Single transaction entry returned by `queryTransactions`
+Single transaction entry returned 
 """
 type TxEntry {
   Signature: ID!
@@ -42,7 +34,7 @@ type TxEntry {
 }
 
 """
-Wrapper for transactions list returned by `queryTransactions`
+Wrapper for transactions list returned 
 """
 type TxResponse {
   address: String!
@@ -50,200 +42,7 @@ type TxResponse {
   transaction: [TxEntry!]!
 }
 
-"""
-Result returned by `sendTransaction` (renamed to avoid collisions)
-"""
-type BlockstreamSendResult {
-  Signature: ID!
-  time: Date
-  from: String
-  to: String
-  amount: Float
-  fee: Float
-  currency: String
-  status: String
-  balance: Float
-}
-
-"""
-Result for wallet generation endpoint
-"""
-type GenerateResult {
-  generated: Int!
-  wallets: [BTCWallet!]!
-  path: String
-}
-
-# ------------------------
-# EthVM types (source: ethvm/schema.graphql)
-# ------------------------
-"""
-Result when querying an address balance via `queryBalance`
-"""
-type BalanceInfo {
-  address: String!
-  network: String!
-  balance: Float!
-  currency: String!
-}
-
-"""
-A simple transaction record returned by `queryTransactions`
-"""
-type Tx {
-  signature: ID!
-  time: Date
-  from: String
-  to: String
-  amount: Float
-  fee: Float
-  currency: String
-  status: String
-  balance: Float
-}
-
-"""
-Wrapper for transactions response (matches REST shape used in ethvm_api.ts)
-"""
-type TransactionsResponse {
-  address: String!
-  network: String!
-  transaction: [Tx!]!
-}
-
-"""
-Result of a send operation (renamed to avoid collisions)
-"""
-type EthvmSendResult {
-  signature: ID!
-  time: Date
-  from: String!
-  to: String!
-  amount: Float
-  fee: Float
-  currency: String
-  status: String
-  balance: Float
-}
-
-"""
-Wallet information produced by `generateWallets`
-"""
-type WalletInfo {
-  label: String!
-  address: String!
-  privateKey: String!
-  mnemonic: String
-  createdAt: Date!
-}
-
-type WalletOutput {
-  generated: Int!
-  wallets: [WalletInfo!]!
-}
-
-input GenerateWalletsInput {
-  count: Int = 1
-  label: String = "sepolia-wallet"
-  save: Boolean = false
-  outputPath: String
-}
-
-# ------------------------
-# Solana types (source: solana/schema.graphql)
-# ------------------------
-"""
-Represents a generated wallet entry matching `SolanaWalletInfo` in `solana.ts`
-"""
-type SolanaWalletInfo {
-  label: String!
-  address: String!
-  PrivateKey: [Int!]!
-  createdAt: Date!
-}
-
-"""
-Balance object returned by `getBalanceObject`
-"""
-type BalanceObject {
-  address: String!
-  network: String!
-  balance: Float!
-  currency: String!
-}
-
-"""
-Single transaction entry returned by `getTxs` (fields mirror `solana.ts` output)
-"""
-type TxItem {
-  Signature: ID!
-  time: Date
-  from: String
-  to: String
-  amount: Float
-  fee: Float
-  currency: String
-  status: String
-  balance: Float
-}
-
-"""
-Wrapper for transaction list returned by `getTxs`
-"""
-type TxList {
-  address: String!
-  network: String!
-  txs: [TxItem!]!
-}
-
-"""
-Result returned by `sendTransaction` (renamed to avoid collisions)
-"""
-type SolanaSendResult {
-  Signature: ID!
-  time: Date
-  from: String!
-  to: String!
-  amount: Float!
-  fee: Float
-  currency: String!
-  status: String!
-  balance: Float
-}
-
-input PaginationInput {
-  limit: Int = 1000
-}
-
-# ------------------------
-# Root Query and Mutation
-# - Queries and mutations are namespaced by module prefix to avoid collisions
-# ------------------------
-
 type Query {
-  # Blockstream
-  blockstream_balance(address: String!): Balance!
-  blockstream_txs(address: String!, limit: Int): TxResponse!
-
-  # EthVM
-  ethvm_balance(address: String!): BalanceInfo!
-  ethvm_txs(address: String!): TransactionsResponse!
-
-  # Solana
-  solana_balance(address: String!): BalanceObject!
-  solana_txs(address: String!, limit: Int): TxList!
-  solana_generateWallets(count: Int = 1, label: String): [SolanaWalletInfo!]!
-}
-
-type Mutation {
-  # Blockstream
-  blockstream_generate(count: Int = 1, save: Boolean = false, outputPath: String, label: String): GenerateResult!
-  blockstream_send(wif: String!, to: String!, amount: String!, feeRate: Int): BlockstreamSendResult!
-
-  # EthVM
-  ethvm_send(fromPrivateKey: String!, to: String!, amount: String!): EthvmSendResult!
-  ethvm_generateWallets(input: GenerateWalletsInput): WalletOutput!
-
-  # Solana
-  solana_send(senderSecret: String!, recipient: String!, amount: Float): SolanaSendResult!
+  balance(address: String!): Balance!
+  txs(address: String!, limit: Int): TxResponse!
 }
