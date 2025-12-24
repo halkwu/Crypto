@@ -2,9 +2,10 @@
   "name": "ethvm-wallet-test",
   "version": "1.0.0",
   "description": "Generate test Ethereum wallets for ethvm (TypeScript)",
-  "main": "generate_wallet.ts",
   "scripts": {
-    "generate": "ts-node generate_wallet.ts"
+    "start": "ts-node ethvm_api.ts",
+    "start:graphql": "ts-node ethvm_graphql.ts",
+    "build": "tsc"
   },
   "dependencies": {
     "apollo-server-express": "^3.13.0",

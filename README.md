@@ -38,8 +38,6 @@ npx ts-node blockstream_api.ts
 cd ethvm
 [Environment]::SetEnvironmentVariable('ALCHEMY_SEPOLIA_RPC','https://eth-sepolia.alchemyapi.io/v2/YOUR_KEY','User')
 [Environment]::SetEnvironmentVariable('ETHERSCAN_API_KEY','YOUR_ETHERSCAN_KEY','User')
-# Restart terminal or log out/in to take effect
-npx ts-node ethvm.ts generate
 
 npx ts-node ethvm_api.ts 
 ```
@@ -111,23 +109,106 @@ The server starts an Apollo/Express GraphQL endpoint on port `4002` by default (
 
 - **Sample GraphQL query**:
 
-```graphql
-query GetBalance {
-	balance(address: "YourAddressHere") {
-		address
-		network
-		balance
-		currency
-	}
+```graphql solana
+query GetBalanceAndTxs($address: String!, $limit: Int) {
+  balance(address: $address) {
+    address
+    network
+    balance
+    currency
+  }
+  txs(address: $address, limit: $limit) {
+    address
+    network
+    transaction {
+      Signature
+      time
+      from
+      to
+      amount
+      fee
+      currency
+      status
+      balance
+    }
+  }
 }
 ```
 
-The `balance` and `txs` resolvers in `solana/solana_graphql.ts` forward requests to the REST endpoints (for example `/balance?address=...`), handle upstream errors, and return structured GraphQL responses.
+```query variables
+{
+	"address": "126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs",
+	"limit": 1000
+}
+```
+
+The `balance` and `txs` resolvers in `solana/solana_graphql.ts` forward requests to the REST endpoints (for example `/balance?address=...`), handle upstream errors, and return structured GraphQL responses.It can also be applied to blockstream and ethvm.
+
+```graphql ethvm
+query GetBalanceAndTxs($address: String!, $limit: Int) {
+  balance(address: $address) {
+    address
+    network
+    balance
+    currency
+  }
+  txs(address: $address, limit: $limit) {
+    address
+    network
+    transaction {
+      Signature
+      time
+      from
+      to
+      amount
+      fee
+      currency
+      status
+      balance
+    }
+  }
+}
+```
+
+```query variables
+{
+	"address": "0x24C05221757D8A02688ca054570EE9AaBc9F1733",
+	"limit": 1000
+}
+```
+
+```graphql blockstream
+query GetBalanceAndTxs($address: String!, $limit: Int) {
+  balance(address: $address) {
+    address
+    network
+    balance
+    currency
+  }
+  txs(address: $address, limit: $limit) {
+    address
+    network
+    transaction {
+      Signature
+      time
+      from
+      to
+      amount
+      fee
+      currency
+      status
+      balance
+    }
+  }
+}
+```
+
+```query variables
+{
+	"address": "tb1qy63lsd8ld6wj258gp0aazvsy27um52e53hyzth",
+	"limit": 1000
+}
+```
 
 If you want a unified GraphQL server for all modules, mount each module's resolvers on a single ApolloServer instance while using the merged `schema.graphql` as the type definitions.
-
-**Notes and recommendations**
-
-- Most scripts and examples are intended for demonstration and local testing only. Do not use test private keys or unreviewed scripts on mainnets or in production.
-- Check each subdirectory's `package.json`—script names or entry files may differ across modules (for example, verify actual filenames such as `blockstream.ts` in the directory).
 

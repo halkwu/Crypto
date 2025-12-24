@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "ts-node blockstream.ts",
+    "start": "ts-node blockstream_api.ts",
     "start:graphql": "ts-node blockstream_graphql.ts",
     "build": "tsc"
   },

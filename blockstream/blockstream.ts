@@ -59,10 +59,10 @@ export function saveWallets(wallets: BTCWallet[] | BTCWallet, outputPath = DEFAU
   return p;
 }
 
-async function queryAddressUtxos(address: string) {
+async function queryAddressUtxos(address: string): Promise<any[]> {
   const url = `${API_BASE}/address/${address}/utxo`;
-  const resp = await axios.get(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
-  return resp.data;
+  const resp = await axios.get<any[]>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
+  return resp.data as any[];
 }
 
 export async function queryBalance(address: string) {
@@ -82,7 +82,7 @@ export async function queryBalance(address: string) {
 export async function queryTransactions(address: string, limit = 10000): Promise<{ address: string; network: string; transaction: any[] }> {
   if (!isValidAddress(address)) throw new Error('invalid address format');
   const url = `${API_BASE}/address/${address}/txs`;
-  const resp = await axios.get(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
+  const resp = await axios.get<any[]>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
   const txs = resp.data || [];
 
   // get current balance (BTC) to use as balance for newest tx
@@ -211,14 +211,14 @@ export async function queryTransactions(address: string, limit = 10000): Promise
 
 async function queryTx(txid: string) {
   const url = `${API_BASE}/tx/${txid}`;
-  const resp = await axios.get(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
+  const resp = await axios.get<any>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
   return resp.data;
 }
 
-async function queryTxHex(txid: string) {
+async function queryTxHex(txid: string): Promise<string> {
   const url = `${API_BASE}/tx/${txid}/hex`;
-  const resp = await axios.get(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
-  return resp.data;
+  const resp = await axios.get<string>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
+  return String(resp.data);
 }
 
 export async function sendTransaction(senderWif: string, toAddress: string, amountArg: string, opts: { feeRate?: number } = {}) {
@@ -282,7 +282,7 @@ export async function sendTransaction(senderWif: string, toAddress: string, amou
   psbt.finalizeAllInputs();
   const raw = psbt.extractTransaction().toHex();
 
-  const resp = await axios.post(`${API_BASE}/tx`, raw, { headers: { 'Content-Type': 'text/plain' } });
+  const resp = await axios.post<any>(`${API_BASE}/tx`, raw, { headers: { 'Content-Type': 'text/plain' } });
   const txid = typeof resp.data === 'string' ? resp.data : (resp.data?.txid || '<unknown>');
 
   // Try to fetch transaction details (time, fee, status) and updated balance
