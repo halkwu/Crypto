@@ -19,9 +19,9 @@ This repository contains several subprojects for demonstrating and testing multi
 1. Install dependencies for each subproject (example: run in each subdirectory):
 
 ```bash
-cd ../blockstream && npm install
-cd ../ethvm && npm install
-cd ../solana && npm install
+cd ./blockstream && npm install
+cd ./ethvm && npm install
+cd ./solana && npm install
 ```
 
 2. Start or run each subproject:
