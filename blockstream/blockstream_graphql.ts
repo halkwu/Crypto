@@ -1,14 +1,10 @@
-import express from 'express';
-import { ApolloServer, gql } from 'apollo-server-express';
-import fs from 'fs';
-import path from 'path';
-import axios from 'axios';
+import { ApolloServer} from 'apollo-server';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { GraphQLScalarType, Kind } from 'graphql';
+import { queryBalance, queryTransactions } from './blockstream';
 
-const REST_BASE = process.env.REST_BASE || 'http://localhost:3000';
-
-const schemaPath = path.join(__dirname, '..', 'schema.graphql');
-const typeDefs = gql`${fs.readFileSync(schemaPath, 'utf8')}`;
+const typeDefs = readFileSync(join(__dirname, '..', 'schema.graphql'), 'utf8');
 
 const JSONScalar = new GraphQLScalarType({
   name: 'JSON',
@@ -81,92 +77,35 @@ const resolvers = {
   Date: DateScalar,
   JSON: JSONScalar,
   Query: {
-    balance: async (_: any, { address }: { address: string }) => {
+    Account: async (_: any, args: { id?: string}) => {
+      const id = (args.id|| '').toString();
+      if (!id) throw new Error('address (id) argument is required');
       try {
-        const resp = await axios.get(`${REST_BASE}/balance`, { params: { address } });
-        return resp.data;
+        const result = await queryBalance(id);
+        return result;
       } catch (err: any) {
         console.error('Error fetching balance', err);
-        let message = 'Failed to fetch balance';
-        if (err && err.response) {
-          if (err.response) {
-            const resp = err.response;
-            const body = resp.data;
-            let bodyMsg = '';
-            try {
-              if (typeof body === 'string') bodyMsg = body;
-              else if (body && (body.message || body.error)) bodyMsg = body.message || body.error;
-              else bodyMsg = JSON.stringify(body);
-            } catch (e) {
-              bodyMsg = '[unserializable response body]';
-            }
-            message = `Upstream ${resp.status}: ${bodyMsg}`;
-          } else if (err.request) {
-            message = 'No response from REST backend';
-          } else {
-            message = err.message || message;
-          }
-        } else {
-          message = err && err.message ? err.message : message;
-        }
-        throw new Error(message);
+        throw new Error(err?.message || 'Failed to fetch balance');
       }
     },
-    txs: async (_: any, { address, limit }: { address: string; limit?: number }) => {
+    Transaction: async (_: any, args: { id?: string}) => {
+      const id = (args.id || '').toString();
+      if (!id) throw new Error('tx id (id) argument is required');
       try {
-        const params: any = { address };
-        if (limit !== undefined) params.limit = limit;
-        const resp = await axios.get(`${REST_BASE}/txs`, { params });
-        return resp.data;
+        const result = await queryTransactions(id);
+        return Array.isArray(result?.transaction) ? result.transaction : [];
       } catch (err: any) {
         console.error('Error fetching txs', err);
-        let message = 'Failed to fetch txs';
-        if (err && err.response) {
-          if (err.response) {
-            const resp = err.response;
-            const body = resp.data;
-            let bodyMsg = '';
-            try {
-              if (typeof body === 'string') bodyMsg = body;
-              else if (body && (body.message || body.error)) bodyMsg = body.message || body.error;
-              else bodyMsg = JSON.stringify(body);
-            } catch (e) {
-              bodyMsg = '[unserializable response body]';
-            }
-            message = `Upstream ${resp.status}: ${bodyMsg}`;
-          } else if (err.request) {
-            message = 'No response from REST backend';
-          } else {
-            message = err.message || message;
-          }
-        } else {
-          message = err && err.message ? err.message : message;
-        }
-        throw new Error(message);
+        throw new Error(err?.message || 'Failed to fetch txs');
       }
     }
   }
 };
 
 async function start() {
-  const app = express();
-  const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-    formatError: (err: any) => ({
-      message: err.message,
-      locations: err.locations,
-      path: err.path,
-      extensions: { code: err.extensions && err.extensions.code }
-    })
-  } as any);
-  await server.start();
-  server.applyMiddleware({ app, path: '/graphql' });
-  const port = Number(process.env.PORT || 4000);
-  app.listen(port, () => {
-    console.log(`Blockstream GraphQL server ready at http://localhost:${port}${server.graphqlPath}`);
-    console.log(`Resolvers proxy to REST base: ${REST_BASE}`);
-  });
+  const server = new ApolloServer({ typeDefs, resolvers });
+  const { url } = await server.listen({ port: 4000 });
+  console.log(`GraphQL server running at ${url}`);
 }
 
 start().catch((e) => {

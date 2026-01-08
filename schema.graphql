@@ -8,27 +8,12 @@ Arbitrary JSON passthrough scalar used by resolvers
 """
 scalar JSON
 
-"""
-Balance result returned
-"""
-type Balance {
-  address: String!
-  network: String!
-  balance: Float!
-  currency: String!
-}
-
-"""
-Single transaction entry returned 
-"""
-type TxEntry {
-  Signature: ID!
-  time: Date
-  from: String
-  to: String
+type transaction {
+  transactionId: ID
+  transactionTime: Date
   amount: Float
-  fee: Float
   currency: String
+  description: String
   status: String
   balance: Float
 }
@@ -36,13 +21,14 @@ type TxEntry {
 """
 Wrapper for transactions list returned 
 """
-type TxResponse {
-  address: String!
-  network: String!
-  transaction: [TxEntry!]!
+type account {
+  id: String
+  name: String
+  balance: Float
+  currency: String
 }
 
 type Query {
-  balance(address: String!): Balance!
-  txs(address: String!, limit: Int): TxResponse!
+  Account(id: String!): account
+  Transaction(id: String!): [transaction]
 }
