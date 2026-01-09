@@ -76,10 +76,10 @@ export async function queryBalance(id: string) {
     name: 'testnet',
     balance,
     currency: 'BTC',
-  } as const;
+  } as any;
 }
 
-export async function queryTransactions(id: string): Promise<{transaction: any[] }> {
+export async function queryTransactions(id: string): Promise<any[]> {
   if (!isValidAddress(id)) throw new Error('invalid address format');
   const url = `${API_BASE}/address/${id}/txs`;
   const resp = await axios.get<any[]>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
@@ -195,7 +195,7 @@ export async function queryTransactions(id: string): Promise<{transaction: any[]
     }
   }
 
-  return {transaction: out };
+  return out;
 }
 
 async function queryTx(txid: string) {

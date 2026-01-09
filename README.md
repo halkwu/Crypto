@@ -1,6 +1,6 @@
 # Multi-Chain Toolkit (Blockstream / EthVM / Solana)
 
-This repository contains several subprojects for demonstrating and testing multi-chain features: Bitcoin (blockstream), EVM-like chains (ethvm), Solana (solana), an Angular frontend (angular-ui), and a simple API aggregator example (api).
+This repository contains several subprojects for demonstrating and testing multi-chain features: Bitcoin (blockstream), EVM-like chains (ethvm), Solana (solana),  and a simple graphql API aggregator.
 
 **Directory structure**
 - `blockstream/` — BTC-related tools and API (generate wallets, query balances, send transactions)
@@ -29,17 +29,19 @@ cd ./solana && npm install
 
 ```bash
 cd blockstream
-npx ts-node blockstream_api.ts 
+npx ts-node blockstream_graphql.ts 
 ```
 
 - EthVM (generate example wallets / scripts)
 
 ```bash
 cd ethvm
+$env:ALCHEMY_SEPOLIA_RPC = 'https://eth-sepolia.g.alchemy.com/v2/1F3B2_vCtktJ20704ogP2'
+$env:ETHERSCAN_API_KEY = 'CYR4YTW1WY82EW6VJUCQMB2V6U9ERUAEA6'
 [Environment]::SetEnvironmentVariable('ALCHEMY_SEPOLIA_RPC','https://eth-sepolia.alchemyapi.io/v2/YOUR_KEY','User')
 [Environment]::SetEnvironmentVariable('ETHERSCAN_API_KEY','YOUR_ETHERSCAN_KEY','User')
 
-npx ts-node ethvm_api.ts 
+npx ts-node ethvm_graphql.ts 
 ```
 
 - Solana
@@ -48,43 +50,14 @@ The Solana subdirectory contains TypeScript script examples; run specific script
 
 ```bash
 cd solana
-npx ts-node solana_api.ts 
+npx ts-node solana_graphql.ts 
 ```
-
-**Common examples (PowerShell / curl)**
-
-Each submodule exposes REST endpoints in the example API:
-
-- Query balance / txs (PowerShell example):
-
-Blockstream port:3000
-EthVM port:3001
-solana port: 3002
-```powershell
-Invoke-RestMethod "http://localhost:port/balance?address=YourAddress" | ConvertTo-Json
-Invoke-RestMethod "http://localhost:port/txs?address=YourAddress" | ConvertTo-Json
-```
-
-- Generate wallets (POST):
-
-```powershell
-Invoke-RestMethod -Uri 'http://localhost:port/generate' -Method POST -Body (ConvertTo-Json @{count=2; label='demo-wallets'; save=$true; outputPath='demo_wallets.json'}) -ContentType 'application/json'
-```
-
-- Send transaction (EVM example):
-
-```powershell
-Invoke-RestMethod -Uri 'http://localhost:port/send' -Method POST -Body (ConvertTo-Json @{ fromPrivateKey='0xYOUR_PRIVATE_KEY'; to='0xRECIPIENT'; amount='0.001' }) -ContentType 'application/json'
-```
-
 
 **GraphQL**
 
 A merged `schema.graphql` is provided at the repository root. It combines the three schemas (`blockstream`, `ethvm`, and `solana`) into a single schema file: [schema.graphql](schema.graphql).
 
 Below are notes and a small example for running a module-level GraphQL server (Solana) that uses the merged schema and proxies queries to the example REST backend.
-
-- **Example implementation**: The Solana example GraphQL server is implemented in `solana/solana_graphql.ts`. That script loads the top-level `schema.graphql`, defines `Date` and `JSON` custom scalars, and implements resolvers that proxy `balance` and `txs` queries to the REST API (default REST base: `http://localhost:3002`).
 
 - **Install dependencies**:
 
@@ -100,113 +73,91 @@ cd solana
 npx ts-node solana_graphql.ts
 ```
 
-The server starts an Apollo/Express GraphQL endpoint on port `4002` by default (override with the `PORT` environment variable). The server logs the GraphQL URL and the `REST_BASE` it is proxying to.
+The server starts an Apollo/Express GraphQL endpoint on port `4002` by default.
 
 - **Configuration**:
-	- `REST_BASE` — REST backend base URL that resolvers proxy to (default: `http://localhost:3002`).
 	- `PORT` — GraphQL server port (default: `4002`).
-	See `solana/package.json` for runtime dependencies such as `apollo-server-express` and `graphql`.
+	See `solana/package.json` for runtime dependencies such as `apollo-server` and `graphql`.
 
 - **Sample GraphQL query**:
 
 ```graphql solana
-query GetBalanceAndTxs($address: String!, $limit: Int) {
-  balance(address: $address) {
-    address
-    network
+query GetBalanceAndTxs($id: String!) {
+  Account(id: $id) {
+    id
+    name
     balance
     currency
   }
-  txs(address: $address, limit: $limit) {
-    address
-    network
-    transaction {
-      Signature
-      time
-      from
-      to
+  Transaction(id: $id) {
+      transactionId
+      transactionTime
       amount
-      fee
       currency
+			description
       status
       balance
     }
   }
-}
 ```
 
 ```query variables
 {
-	"address": "126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs",
-	"limit": 1000
+	"address": "126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs"
 }
 ```
 
-The `balance` and `txs` resolvers in `solana/solana_graphql.ts` forward requests to the REST endpoints (for example `/balance?address=...`), handle upstream errors, and return structured GraphQL responses.It can also be applied to blockstream and ethvm.
+The `Account` and `Transaction` resolvers in `solana/solana_graphql.ts` , and return structured GraphQL responses.It can also be applied to blockstream and ethvm.
 
 ```graphql ethvm
-query GetBalanceAndTxs($address: String!, $limit: Int) {
-  balance(address: $address) {
-    address
-    network
+query GetBalanceAndTxs($id: String!) {
+  Account(id: $id) {
+    id
+    name
     balance
     currency
   }
-  txs(address: $address, limit: $limit) {
-    address
-    network
-    transaction {
-      Signature
-      time
-      from
-      to
+  Transaction(id: $id) {
+      transactionId
+      transactionTime
       amount
-      fee
       currency
+			description
       status
       balance
     }
   }
-}
 ```
 
 ```query variables
 {
 	"address": "0x24C05221757D8A02688ca054570EE9AaBc9F1733",
-	"limit": 1000
 }
 ```
 
 ```graphql blockstream
-query GetBalanceAndTxs($address: String!, $limit: Int) {
-  balance(address: $address) {
-    address
-    network
+query GetBalanceAndTxs($id: String!) {
+  Account(id: $id) {
+    id
+    name
     balance
     currency
   }
-  txs(address: $address, limit: $limit) {
-    address
-    network
-    transaction {
-      Signature
-      time
-      from
-      to
+  Transaction(id: $id) {
+      transactionId
+      transactionTime
       amount
-      fee
       currency
+			description
       status
       balance
     }
   }
-}
 ```
 
 ```query variables
 {
 	"address": "tb1qy63lsd8ld6wj258gp0aazvsy27um52e53hyzth",
-	"limit": 1000
 }
 ```
 

@@ -77,28 +77,37 @@ const resolvers = {
   Date: DateScalar,
   JSON: JSONScalar,
   Query: {
-    Account: async (_: any, args: { id?: string}) => {
-      const id = (args.id|| '').toString();
-      if (!id) throw new Error('address (id) argument is required');
+    Account: async (_: any, { id }: { id: string }) => {
       try {
-        const result = await queryBalance(id);
-        return result;
+        const resp = await queryBalance(id);
+        return {
+          id: resp.id,
+          name: resp.name,
+          balance: resp.balance,
+          currency: resp.currency,
+        };
       } catch (err: any) {
-        console.error('Error fetching balance', err);
-        throw new Error(err?.message || 'Failed to fetch balance');
+        const msg = err && err.message ? err.message : 'Failed to fetch account';
+        throw new Error(msg);
       }
     },
-    Transaction: async (_: any, args: { id?: string}) => {
-      const id = (args.id || '').toString();
-      if (!id) throw new Error('tx id (id) argument is required');
+    Transaction: async (_: any, { id }: { id: string }) => {
       try {
-        const result = await queryTransactions(id);
-        return Array.isArray(result?.transaction) ? result.transaction : [];
+        const transaction = await queryTransactions(id);
+        return transaction.map((t: any) => ({
+          transactionId: t.transactionId,
+          transactionTime: t.transactionTime,
+          amount: t.amount,
+          currency: t.currency,
+          description: t.description,
+          status: t.status,
+          balance: t.balance,
+        }));
       } catch (err: any) {
-        console.error('Error fetching txs', err);
-        throw new Error(err?.message || 'Failed to fetch txs');
+        const msg = err && err.message ? err.message : 'Failed to fetch transactions';
+        throw new Error(msg);
       }
-    }
+    },
   }
 };
 
