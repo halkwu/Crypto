@@ -29,6 +29,6 @@ type account {
 }
 
 type Query {
-  Account(id: String!): account
-  Transaction(id: String!): [transaction]
+  Account(id: String): account
+  Transaction(id: String): [transaction]
 }
