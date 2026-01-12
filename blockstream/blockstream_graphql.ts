@@ -80,12 +80,12 @@ const resolvers = {
     Account: async (_: any, { id }: { id: string }) => {
       try {
         const resp = await queryBalance(id);
-        return {
+        return [{
           id: resp.id,
           name: resp.name,
           balance: resp.balance,
           currency: resp.currency,
-        };
+        }];
       } catch (err: any) {
         const msg = err && err.message ? err.message : 'Failed to fetch account';
         throw new Error(msg);
