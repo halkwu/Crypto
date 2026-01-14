@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { GraphQLScalarType, Kind } from 'graphql';
 import { queryBalance, queryTransactions, isValidAddress } from './blockstream';
-import { existsSync } from 'fs';
+import { randomBytes } from 'crypto';
 
 const typeDefs = readFileSync(join(__dirname, '..', 'schema.graphql'), 'utf8');
 
@@ -66,6 +66,7 @@ const resolvers = {
     account: async (_: any, { identifier }: any) => {
       try {
         let addr: string | undefined | null = null;
+        const usedSession = identifier && typeof identifier === 'string' && sessions.has(identifier);
         if (identifier && typeof identifier === 'string') {
           // if caller passed a raw address, use it directly
           if (isValidAddress(identifier)) addr = identifier;
@@ -73,6 +74,8 @@ const resolvers = {
         }
         if (!addr) throw new Error('invalid or missing identifier');
         const resp = await queryBalance(addr);
+        // invalidate one-time session token after successful use
+        if (usedSession) sessions.delete(identifier);
         return [{
           id: resp.id,
           name: resp.name,
@@ -87,12 +90,15 @@ const resolvers = {
     transaction: async (_: any, { identifier }: any) => {
       try {
         let addr: string | undefined | null = null;
+        const usedSession = identifier && typeof identifier === 'string' && sessions.has(identifier);
         if (identifier && typeof identifier === 'string') {
           if (isValidAddress(identifier)) addr = identifier;
           else addr = sessions.get(identifier) || null;
         }
         if (!addr) throw new Error('invalid or missing identifier');
         const transactions = await queryTransactions(addr);
+        // invalidate one-time session token after successful use
+        if (usedSession) sessions.delete(identifier);
         return transactions.map((t: any) => ({
           transactionId: t.transactionId,
           transactionTime: t.transactionTime,
@@ -128,7 +134,7 @@ const resolvers = {
 
         if (!address) throw new Error('no valid address available');
 
-        const id = Math.random().toString(36).slice(2);
+        const id = randomBytes(4).toString('hex');
         sessions.set(id, address);
         return {
           response: 'success',
