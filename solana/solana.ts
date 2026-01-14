@@ -13,7 +13,7 @@ import {
 
 function getConnection() { return new Connection(clusterApiUrl("devnet"), "confirmed"); }
 
-function isValidAddress(address: string | undefined | null) {
+export function isValidAddress(address: string | undefined | null) {
   if (!address || typeof address !== 'string') return false;
   try {
     // PublicKey constructor will throw for invalid base58 or wrong length
@@ -272,6 +272,5 @@ export async function queryTransactions(id: string) {
     lastBalanceLam = prevBalanceLam;
   }
 
-  console.log(JSON.stringify(transaction, null, 2));
   return transaction;
 }

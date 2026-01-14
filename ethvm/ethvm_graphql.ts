@@ -2,7 +2,7 @@ import { ApolloServer} from 'apollo-server';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { GraphQLScalarType, Kind } from 'graphql';
-import { queryBalance, queryTransactions } from './ethvm';
+import { queryBalance, queryTransactions, isValidAddress } from './ethvm';
 
 const typeDefs = readFileSync(join(__dirname, '..', 'schema.graphql'), 'utf8');
 
@@ -34,23 +34,6 @@ const JSONScalar = new GraphQLScalarType({
   }
 });
 
-const DateScalar = new GraphQLScalarType({
-  name: 'Date',
-  description: 'ISO-8601 date string',
-  serialize: (value: any) => {
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string') return value;
-    return null;
-  },
-  parseValue: (value: any) => {
-    return value ? new Date(value) : null;
-  },
-  parseLiteral: (ast: any) => {
-    if (ast.kind === Kind.STRING) return new Date(ast.value);
-    return null;
-  }
-});
-
 function parseLiteral(ast: any): any {
   switch (ast.kind) {
     case Kind.STRING:
@@ -74,12 +57,11 @@ function parseLiteral(ast: any): any {
 }
 
 const resolvers = {
-  Date: DateScalar,
   JSON: JSONScalar,
   Query: {
-    Account: async (_: any, { id }: { id: string }) => {
+    account: async (_: any, { identifier }: { identifier: string }) => {
       try {
-        const resp = await queryBalance(id);
+        const resp = await queryBalance(identifier);
         return [{
           id: resp.id,
           name: resp.name,
@@ -91,9 +73,9 @@ const resolvers = {
         throw new Error(msg);
       }
     },
-    Transaction: async (_: any, { id }: { id: string }) => {
+    transaction: async (_: any, { identifier }: { identifier: string }) => {
       try {
-        const txs = await queryTransactions(id);
+        const txs = await queryTransactions(identifier);
         return txs.map((t: any) => ({
           transactionId: t.transactionId,
           transactionTime: t.transactionTime,
@@ -108,7 +90,26 @@ const resolvers = {
         throw new Error(msg);
       }
     },
-  }
+  },
+  Mutation: {
+    auth: async (_: any, { payload }: any) => {
+      try {
+        const id = payload?.identifier || payload?.id || null;
+        if (!id || !isValidAddress(id)) {
+          return {
+            response: 'fail',
+            identifier: null,
+          };
+        }
+        return {
+          response: 'success',
+          identifier: id,
+        };
+      } catch (e) {
+        throw new Error('Auth failed');
+      }
+    },
+  },
 };
 
 async function start() {
