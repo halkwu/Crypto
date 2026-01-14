@@ -1,10 +1,13 @@
 import { ApolloServer} from 'apollo-server';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { GraphQLScalarType, Kind } from 'graphql';
 import { queryBalance, queryTransactions, isValidAddress } from './ethvm';
 
 const typeDefs = readFileSync(join(__dirname, '..', 'schema.graphql'), 'utf8');
+
+// map of runtime session identifier -> address
+const sessions: Map<string, string> = new Map();
 
 const JSONScalar = new GraphQLScalarType({
   name: 'JSON',
@@ -59,9 +62,16 @@ function parseLiteral(ast: any): any {
 const resolvers = {
   JSON: JSONScalar,
   Query: {
-    account: async (_: any, { identifier }: { identifier: string }) => {
+    account: async (_: any, { identifier }: any) => {
       try {
-        const resp = await queryBalance(identifier);
+        let addr: string | undefined | null = null;
+        if (identifier && typeof identifier === 'string') {
+          // if caller passed a raw address, use it directly
+          if (isValidAddress(identifier)) addr = identifier;
+          else addr = sessions.get(identifier) || null;
+        }
+        if (!addr) throw new Error('invalid or missing identifier');
+        const resp = await queryBalance(addr);
         return [{
           id: resp.id,
           name: resp.name,
@@ -73,9 +83,15 @@ const resolvers = {
         throw new Error(msg);
       }
     },
-    transaction: async (_: any, { identifier }: { identifier: string }) => {
+    transaction: async (_: any, { identifier }: any) => {
       try {
-        const txs = await queryTransactions(identifier);
+        let addr: string | undefined | null = null;
+        if (identifier && typeof identifier === 'string') {
+          if (isValidAddress(identifier)) addr = identifier;
+          else addr = sessions.get(identifier) || null;
+        }
+        if (!addr) throw new Error('invalid or missing identifier');
+        const txs = await queryTransactions(addr);
         return txs.map((t: any) => ({
           transactionId: t.transactionId,
           transactionTime: t.transactionTime,
@@ -94,19 +110,30 @@ const resolvers = {
   Mutation: {
     auth: async (_: any, { payload }: any) => {
       try {
-        const id = payload?.identifier || payload?.id || null;
-        if (!id || !isValidAddress(id)) {
+        // Accept payload.address or payload.id (preferred) or fall back to demo wallet
+        let address: string | null = null;
+        const maybe = payload && typeof payload === 'object' ? (payload.address || payload.id || payload.identifier) : null;
+
+        if (!isValidAddress(maybe)) {
           return {
-            response: 'fail',
-            identifier: null,
+          response: 'fail',
+          identifier: null,
           };
         }
+        
+        if (maybe && typeof maybe === 'string' && isValidAddress(maybe)) {
+          address = maybe;
+        }
+        if (!address) throw new Error('no valid address available');
+
+        const id = Math.random().toString(36).slice(2);
+        sessions.set(id, address);
         return {
           response: 'success',
           identifier: id,
         };
-      } catch (e) {
-        throw new Error('Auth failed');
+      } catch (e: any) {
+        throw new Error(`Auth failed: ${e && e.message ? e.message : String(e)}`);
       }
     },
   },
