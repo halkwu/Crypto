@@ -117,9 +117,9 @@ const resolvers = {
   Mutation: {
     auth: async (_: any, { payload }: any) => {
       try {
-        // Accept payload.address or payload.id (preferred) or fall back to demo wallet
+        const { id } = payload || {};
         let address: string | null = null;
-        const maybe = payload && typeof payload === 'object' ? (payload.address || payload.id || payload.identifier) : null;
+        const maybe = payload && typeof payload === 'object' ? (id) : null;
 
         if (!isValidAddress(maybe)) {
           return {
@@ -133,11 +133,11 @@ const resolvers = {
         }
         if (!address) throw new Error('no valid address available');
 
-        const id = randomBytes(4).toString('hex');
-        sessions.set(id, address);
+        const sessionId = randomBytes(4).toString('hex');
+        sessions.set(sessionId, address);
         return {
           response: 'success',
-          identifier: id,
+          identifier: sessionId,
         };
       } catch (e: any) {
         throw new Error(`Auth failed: ${e && e.message ? e.message : String(e)}`);
