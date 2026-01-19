@@ -5,6 +5,40 @@ import { GraphQLScalarType, Kind } from 'graphql';
 import { queryBalance, queryTransactions, isValidAddress } from './blockstream';
 import { randomBytes } from 'crypto';
 
+const MAX_CONCURRENT = 3;
+let activeCount = 0;
+const waitQueue: Array<{ id: number; resolve: () => void }> = [];
+let nextProcessId = 1;
+let releaseCount = 0;
+const heldIdentifiers = new Set<string>();
+
+function acquireSlot(): Promise<void> {
+  if (activeCount < MAX_CONCURRENT) {
+    activeCount++;
+    console.log(`[concurrency] acquired slot -> active=${activeCount}, queue=${waitQueue.length}`);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const id = nextProcessId++;
+    waitQueue.push({ id, resolve });
+    console.log(`[concurrency] queued process#${id} -> active=${activeCount}, queue=${waitQueue.length}`);
+  });
+}
+
+function releaseSlot() {
+  if (activeCount <= 0) return;
+  activeCount--;
+  releaseCount++;
+  const next = waitQueue.shift();
+  console.log(`[concurrency] released ${releaseCount} slot(s)`);
+  if (next) {
+    // allocate slot for next waiter then notify it
+    activeCount++;
+    console.log(`[concurrency] handing slot to process#${next.id} -> active=${activeCount}, queue=${waitQueue.length}`);
+    try { next.resolve(); } catch (e) { /* ignore */ }
+  }
+}
+
 const typeDefs = readFileSync(join(__dirname, '..', 'schema.graphql'), 'utf8');
 
 // map of runtime session identifier -> address
@@ -63,7 +97,7 @@ function parseLiteral(ast: any): any {
 const resolvers = {
   JSON: JSONScalar,
   Query: {
-    account: async (_: any, { identifier }: any) => {
+    account: async (_: any, { identifier }: any, ctx: any) => {
       try {
         let addr: string | undefined | null = null;
         const usedSession = identifier && typeof identifier === 'string' && sessions.has(identifier);
@@ -74,6 +108,10 @@ const resolvers = {
         }
         if (!addr) throw new Error('invalid or missing identifier');
         const resp = await queryBalance(addr);
+        // mark identifier for release by plugin after response is sent
+        if (identifier && typeof identifier === 'string' && heldIdentifiers.has(identifier)) {
+          ctx.releaseIdentifier = identifier;
+        }
         // invalidate one-time session token after successful use
         if (usedSession) sessions.delete(identifier);
         return [{
@@ -87,7 +125,7 @@ const resolvers = {
         throw new Error(msg);
       }
     },
-    transaction: async (_: any, { identifier }: any) => {
+    transaction: async (_: any, { identifier }: any, ctx: any) => {
       try {
         let addr: string | undefined | null = null;
         const usedSession = identifier && typeof identifier === 'string' && sessions.has(identifier);
@@ -97,6 +135,10 @@ const resolvers = {
         }
         if (!addr) throw new Error('invalid or missing identifier');
         const txs = await queryTransactions(addr);
+        // mark identifier for release by plugin after response is sent
+        if (identifier && typeof identifier === 'string' && heldIdentifiers.has(identifier)) {
+          ctx.releaseIdentifier = identifier;
+        }
         // invalidate one-time session token after successful use
         if (usedSession) sessions.delete(identifier);
         return txs.map((t: any) => ({
@@ -123,23 +165,30 @@ const resolvers = {
 
         if (!isValidAddress(maybe)) {
           return {
-          response: 'fail',
-          identifier: null,
+            response: 'fail',
+            identifier: null,
           };
         }
-        
+
         if (maybe && typeof maybe === 'string' && isValidAddress(maybe)) {
           address = maybe;
         }
 
         if (!address) throw new Error('no valid address available');
 
-        const sessionId = randomBytes(4).toString('hex');
-        sessions.set(sessionId, address);
-        return {
-          response: 'success',
-          identifier: sessionId,
-        };
+        await acquireSlot();
+        try {
+          const sessionId = randomBytes(4).toString('hex');
+          sessions.set(sessionId, address);
+          heldIdentifiers.add(sessionId);
+          return {
+            response: 'success',
+            identifier: sessionId,
+          };
+        } catch (e: any) {
+          releaseSlot();
+          throw e;
+        }
       } catch (e: any) {
         throw new Error(`Auth failed: ${e && e.message ? e.message : String(e)}`);
       }
@@ -148,7 +197,32 @@ const resolvers = {
 };
 
 async function start() {
-  const server = new ApolloServer({ typeDefs, resolvers });
+  const server = new ApolloServer({
+    typeDefs,
+    resolvers,
+    context: () => ({}),
+    
+    plugins: [
+      {
+        async requestDidStart() {
+          return {
+            async willSendResponse(requestContext: any) {
+              try {
+                const identifier = requestContext.context && requestContext.context.releaseIdentifier;
+                if (identifier && typeof identifier === 'string' && heldIdentifiers.has(identifier)) {
+                  heldIdentifiers.delete(identifier);
+                  releaseSlot();
+                  console.log(`[concurrency] released via plugin for identifier=${identifier} -> active=${activeCount}, queue=${waitQueue.length}`);
+                }
+              } catch (e) {
+                console.error('plugin willSendResponse error', e);
+              }
+            },
+          };
+        },
+      },
+    ],
+  });
   const { url } = await server.listen({ port: 4000 });
   console.log(`GraphQL server running at ${url}`);
 }
