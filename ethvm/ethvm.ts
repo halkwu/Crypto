@@ -134,7 +134,7 @@ export async function sendTransaction(fromPrivateKey: string, to: string, amount
       return Number.isFinite(n) ? n : parseFloat(amtStr) || 0;
     })(),
     currency: 'ETH',
-    description: `from:${(tx.from || '').toLowerCase()} to:${(tx.to || '').toLowerCase()} fee:${String(feeStr || 0)}`,
+    description: `from:${(tx.from || '')} to:${(tx.to || '')} fee:${String(feeStr || 0)}`,
     status,
     balance: balanceStr && !isNaN(Number(balanceStr)) ? Number(balanceStr) : null,
   };
@@ -237,16 +237,16 @@ export async function queryTransactions(id: string): Promise<any[]> {
         transactionTime: time,
         amount: amountNum,
         currency: 'ETH',
-        description: `from:${(tx.from || '').toLowerCase()} to:${(tx.to || '').toLowerCase()} fee:${String(feeNum || 0)}`,
+        description: `from:${(tx.from || '')} to:${(tx.to || '')} fee:${String(feeNum || 0)}`,
         status: tx.isError === '0' ? 'confirmed' : 'failed',
         balance: Number(thisBalance.toFixed(8)),
       });
 
       // compute balance for the next (older) transaction by reversing this tx
-      if (tx.from && tx.from.toLowerCase() === id.toLowerCase()) {
+      if (tx.from && tx.from === id) {
         // sent from our address: older balance = thisBalance + amount + fee
         prevBalance = thisBalance + amountNum + feeNum;
-      } else if (tx.to && tx.to.toLowerCase() === id.toLowerCase()) {
+      } else if (tx.to && tx.to === id) {
         // received to our address: older balance = thisBalance - amount
         prevBalance = thisBalance - amountNum;
       } else {

@@ -64,6 +64,7 @@ const resolvers = {
   JSON: JSONScalar,
   Query: {
     account: async (_: any, { identifier }: any) => {
+      console.log('account resolver start', { identifier });
       try {
         let addr: string | undefined | null = null;
         const usedSession = identifier && typeof identifier === 'string' && sessions.has(identifier);
@@ -73,7 +74,9 @@ const resolvers = {
           else addr = sessions.get(identifier) || null;
         }
         if (!addr) throw new Error('invalid or missing identifier');
+        console.log('account resolver: calling queryBalance for', addr);
         const resp = await queryBalance(addr);
+        console.log('account resolver: queryBalance returned', { resp });
         // invalidate one-time session token after successful use
         if (usedSession) sessions.delete(identifier);
         return [{
@@ -83,11 +86,13 @@ const resolvers = {
           currency: resp.currency,
         }];
       } catch (err: any) {
+        console.error('account resolver error', err);
         const msg = err && err.message ? err.message : 'Failed to fetch account';
         throw new Error(msg);
       }
     },
     transaction: async (_: any, { identifier }: any) => {
+      console.log('transaction resolver start', { identifier });
       try {
         let addr: string | undefined | null = null;
         const usedSession = identifier && typeof identifier === 'string' && sessions.has(identifier);
@@ -96,10 +101,12 @@ const resolvers = {
           else addr = sessions.get(identifier) || null;
         }
         if (!addr) throw new Error('invalid or missing identifier');
-        const txs = await queryTransactions(addr);
+        console.log('transaction resolver: calling queryTransactions for', addr);
+        const transactions = await queryTransactions(addr);
+        console.log('transaction resolver: queryTransactions returned', { length: transactions?.length });
         // invalidate one-time session token after successful use
         if (usedSession) sessions.delete(identifier);
-        return txs.map((t: any) => ({
+        return transactions.map((t: any) => ({
           transactionId: t.transactionId,
           transactionTime: t.transactionTime,
           amount: t.amount,
@@ -109,6 +116,7 @@ const resolvers = {
           balance: t.balance,
         }));
       } catch (err: any) {
+        console.error('transaction resolver error', err);
         const msg = err && err.message ? err.message : 'Failed to fetch transactions';
         throw new Error(msg);
       }

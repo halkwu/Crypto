@@ -60,8 +60,23 @@ export function saveWallets(wallets: BTCWallet[] | BTCWallet, outputPath = DEFAU
 }
 
 async function queryAddressUtxos(id: string): Promise<any[]> {
+  if (!isValidAddress(id)) throw new Error('invalid address format');
   const url = `${API_BASE}/address/${id}/utxo`;
-  const resp = await axios.get<any[]>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
+
+  const headers = { 'User-Agent': 'blockstream-cli/0.1' };
+  let resp: any;
+  // retry indefinitely on timeout (>1s) until success; non-timeout errors are thrown
+  while (true) {
+    try {
+      resp = await axios.get<any[]>(url, { headers, timeout: 1000 });
+      break;
+    } catch (e: any) {
+      const isTimeout = e && (e.code === 'ECONNABORTED' || /timeout/i.test(String(e.message)));
+      if (!isTimeout) throw e;
+      // small delay before retrying
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
   return resp.data as any[];
 }
 
@@ -82,7 +97,21 @@ export async function queryBalance(id: string) {
 export async function queryTransactions(id: string): Promise<any[]> {
   if (!isValidAddress(id)) throw new Error('invalid address format');
   const url = `${API_BASE}/address/${id}/txs`;
-  const resp = await axios.get<any[]>(url, { headers: { 'User-Agent': 'blockstream-cli/0.1' } });
+
+  const headers = { 'User-Agent': 'blockstream-cli/0.1' };
+  let resp: any;
+  // retry indefinitely on timeout (>1s) until success; non-timeout errors are thrown
+  while (true) {
+    try {
+      resp = await axios.get<any[]>(url, { headers, timeout: 1000 });
+      break;
+    } catch (e: any) {
+      const isTimeout = e && (e.code === 'ECONNABORTED' || /timeout/i.test(String(e.message)));
+      if (!isTimeout) throw e;
+      // small delay before retrying
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
   const txs = resp.data || [];
 
   // get current balance (BTC) to use as balance for newest tx
@@ -108,18 +137,18 @@ export async function queryTransactions(id: string): Promise<any[]> {
       const vouts = Array.isArray(t.vout) ? t.vout : [];
 
       // collect prevout addresses from inputs
-      const prevoutAddrs = vins.map((v: any) => (v.prevout?.scriptpubkey_address || v.prevout?.address || v.addr || null)).filter(Boolean).map((a: string) => a.toLowerCase());
+      const prevoutAddrs = vins.map((v: any) => (v.prevout?.scriptpubkey_address || v.prevout?.address || v.addr || null)).filter(Boolean).map((a: string) => a);
 
-      const allInputsAreUs = prevoutAddrs.length > 0 && prevoutAddrs.every((a: string) => a === id.toLowerCase());
+      const allInputsAreUs = prevoutAddrs.length > 0 && prevoutAddrs.every((a: string) => a === id);
 
       if (allInputsAreUs) {
         // outgoing: we sent funds — from = address, to = other out address, amount = sum of vouts not to us
-        from = id.toLowerCase();
+        from = id;
         let sumOut = 0;
         for (const v of vouts) {
           const a = v.scriptpubkey_address || v.scriptpubkey || null;
           const val = Number(v.value ?? v.scriptpubkey_value ?? 0);
-          if (!a || a.toLowerCase() !== id.toLowerCase()) {
+          if (!a || a !== id) {
             sumOut += Number(val || 0);
             if (!to) to = a || null;
           }
@@ -133,12 +162,12 @@ export async function queryTransactions(id: string): Promise<any[]> {
         amountNum = (Number(sumOut) / 1e8) || 0;
       } else {
         // incoming (not all inputs are ours): treat as to = address, amount = sum of vouts to us, from = other out address if present
-        to = id.toLowerCase();
+        to = id;
         let sumToUs = 0;
         for (const v of vouts) {
           const a = v.scriptpubkey_address || v.scriptpubkey || null;
           const val = Number(v.value ?? v.scriptpubkey_value ?? 0);
-          if (a && a.toLowerCase() === id.toLowerCase()) {
+          if (a && a === id) {
             sumToUs += Number(val || 0);
           } else {
             if (!from) from = a || null;
@@ -148,7 +177,7 @@ export async function queryTransactions(id: string): Promise<any[]> {
         if (sumToUs === 0 && vouts.length) {
           const v0 = vouts[0];
           const a0 = v0?.scriptpubkey_address || v0?.scriptpubkey || null;
-          if (a0 && a0.toLowerCase() === id.toLowerCase()) sumToUs = Number(v0?.value ?? 0);
+          if (a0 && a0 === id) sumToUs = Number(v0?.value ?? 0);
         }
         amountNum = (Number(sumToUs) / 1e8) || 0;
         // if from still null, try to infer from first input prevout
@@ -174,17 +203,17 @@ export async function queryTransactions(id: string): Promise<any[]> {
       transactionTime: time,
       amount: Number(amountNum),
       currency: 'BTC',
-      description: `from:${(from || '').toLowerCase()} to:${(to || '').toLowerCase()} fee:${String(feeNum || 0)}`,
+      description: `from:${(from || '')} to:${(to || '')} fee:${String(feeNum || 0)}`,
       status: status === 'confirmed' ? 'confirmed' : 'pending',
       balance: Number(thisBalance.toFixed(8)),
     });
 
     // compute previous (older) balance by reversing this tx
     try {
-      if (from && from.toLowerCase() === id.toLowerCase()) {
+      if (from && from === id) {
         // we sent: older balance = thisBalance + amount + fee
         prevBalance = thisBalance + (Number(amountNum) || 0) + (feeNum || 0);
-      } else if (to && to.toLowerCase() === id.toLowerCase()) {
+      } else if (to && to === id) {
         // we received: older balance = thisBalance - amount
         prevBalance = thisBalance - (Number(amountNum) || 0);
       } else {
@@ -288,7 +317,7 @@ export async function sendTransaction(senderWif: string, toAddress: string, amou
       transactionTime: time,
       amount: amount / 1e8,
       currency: 'BTC',
-      description: `from:${(fromAddress || '').toLowerCase()} to:${(toAddress || '').toLowerCase()} fee:${String(feeNum)}`,
+      description: `from:${(fromAddress || '')} to:${(toAddress || '')} fee:${String(feeNum)}`,
       status,
       balance,
     } as any;

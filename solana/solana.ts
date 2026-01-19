@@ -140,7 +140,7 @@ export async function sendTransaction(senderSecret: string, recipientArg: string
     transactionTime: time,
     amount: amountSOL,
     currency: 'SOL',
-    description: `from ${sender.publicKey.toBase58()} to:${recipientArg.toLowerCase()} fee:${String(fee || 0)}`,
+    description: `from ${sender.publicKey.toBase58()} to:${recipientArg} fee:${String(fee || 0)}`,
     status,
     balance: newBal / LAMPORTS_PER_SOL,
   };
@@ -157,7 +157,7 @@ export async function queryTransactions(id: string) {
 
   // Get current balance (latest) and work backwards to infer prior balances
   let lastBalanceLam = await conn.getBalance(pub);
-  const addrNorm = String(id).toLowerCase();
+  const addrNorm = String(id);
 
   for (const s of sigs) {
     const parsed = await conn.getParsedTransaction(s.signature, 'confirmed');
@@ -233,7 +233,7 @@ export async function queryTransactions(id: string) {
       transactionTime: time,
       amount: amountSol,
       currency: 'SOL',
-      description: `from:${(from || '').toLowerCase()} to:${(to || '').toLowerCase()} fee:${String(feeSol || 0)}`,
+      description: `from:${(from || '')} to:${(to || '')} fee:${String(feeSol || 0)}`,
       status: status === 'failed' ? 'failed' : 'confirmed',
       balance: balanceAfterLam !== null ? balanceAfterLam / LAMPORTS_PER_SOL : null
     });
@@ -244,8 +244,8 @@ export async function queryTransactions(id: string) {
     // Otherwise, if preBalances available for this tx, use that; else keep lastBalance same.
     let prevBalanceLam: number | null = null;
     try {
-      const fromNorm = (from || '').toLowerCase();
-      const toNorm = (to || '').toLowerCase();
+      const fromNorm = (from || '');
+      const toNorm = (to || '');
       if (fromNorm === addrNorm) {
         prevBalanceLam = Math.floor((balanceAfterLam || 0) + feeNum + (amountLamports || 0));
       } else if (toNorm === addrNorm) {

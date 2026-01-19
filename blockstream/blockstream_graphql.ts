@@ -96,10 +96,10 @@ const resolvers = {
           else addr = sessions.get(identifier) || null;
         }
         if (!addr) throw new Error('invalid or missing identifier');
-        const transactions = await queryTransactions(addr);
+        const txs = await queryTransactions(addr);
         // invalidate one-time session token after successful use
         if (usedSession) sessions.delete(identifier);
-        return transactions.map((t: any) => ({
+        return txs.map((t: any) => ({
           transactionId: t.transactionId,
           transactionTime: t.transactionTime,
           amount: t.amount,
