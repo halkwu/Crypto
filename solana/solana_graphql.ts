@@ -5,7 +5,7 @@ import { GraphQLScalarType, Kind } from 'graphql';
 import { queryBalance, queryTransactions, isValidAddress } from './solana';
 import { randomBytes } from 'crypto';
 
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 1;
 let activeCount = 0;
 const waitQueue: Array<() => void> = [];
 

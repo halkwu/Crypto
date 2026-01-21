@@ -137,7 +137,7 @@ query GetBalanceAndTxs($identifier: String) {
 
 The `account` and `transaction` resolvers in `solana/solana_graphql.ts` , and return structured GraphQL responses. It can also be applied to blockstream and ethvm.
 
-```graphql solana
+```graphql ethvm
 
 Authentication
 mutation Auth($payload: JSON) {

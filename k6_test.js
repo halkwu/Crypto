@@ -24,9 +24,14 @@ query GetBalanceAndTxs($identifier: String!) {
 
 const authMutation = `mutation Auth($payload: JSON) { auth(payload: $payload) { response identifier } }`;
 
-const SHARED_VARS = {
-  id: __ENV.ID || '126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs',
-};
+// Support passing multiple IDs via environment variable `ID` (comma-separated).
+// If not provided, fall back to two defaults.
+const IDS = __ENV.ID
+  ? __ENV.ID.split(',').map((s) => s.trim())
+  : [
+      '126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs',
+      '7uR8CxNFMrrMz84VEDVrzaGztpw3hjvW194nX4dPzJHm',
+    ];
 
 export let options = {
   scenarios: {
@@ -42,8 +47,11 @@ export let options = {
 export default function () {
   const params = { headers: { 'Content-Type': 'application/json' } };
 
+  // choose id by VU + ITER so ids alternate across VUs/iterations
+  const id = IDS[((__VU - 1) + __ITER) % IDS.length];
+
   // 1) Authenticate (request session) to obtain an identifier
-  const authPayload = JSON.stringify({ query: authMutation, variables: { payload: SHARED_VARS } });
+  const authPayload = JSON.stringify({ query: authMutation, variables: { payload: { id } } });
   const authRes = http.post(SERVER_URL, authPayload, params);
   check(authRes, { 'auth status 200': (r) => r.status === 200 });
 
