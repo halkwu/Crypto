@@ -1,4 +1,4 @@
-import { ApolloServer} from 'apollo-server';
+import { ApolloServer } from 'apollo-server';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { GraphQLScalarType, Kind } from 'graphql';
@@ -7,29 +7,32 @@ import { randomBytes } from 'crypto';
 
 const MAX_CONCURRENT = 3;
 let activeCount = 0;
-const waitQueue: Array<() => void> = [];
+type QueueEntry = { queueNumber?: number; resolve: () => void };
+const waitQueue: Array<QueueEntry> = [];
+let nextQueueNumber = 0;
 
 function acquireSlot(): Promise<void> {
   if (activeCount < MAX_CONCURRENT) {
     activeCount++;
-    console.log(`[slot] acquire -> active=${activeCount}`);
+    console.log(`[slot] acquire -> active=${activeCount}, queue=${waitQueue.length}`);
     return Promise.resolve();
   }
   return new Promise((resolve) => {
-    waitQueue.push(resolve);
-    console.log(`[slot] queued -> active=${activeCount}, queue=${waitQueue.length}`);
+    const q = ++nextQueueNumber;
+    waitQueue.push({ queueNumber: q, resolve });
+    console.log(`[slot] queued -> id=${q}, active=${activeCount}, queue=${waitQueue.length}`);
   });
 }
 
 function releaseSlot() {
   if (activeCount <= 0) return;
   activeCount--;
-  console.log(`[slot] release -> active=${activeCount}`);
+  console.log(`[slot] release -> active=${activeCount}, queue=${waitQueue.length}`);
   const next = waitQueue.shift();
   if (next) {
     activeCount++;
-    console.log(`[slot] handoff -> active=${activeCount}`);
-    next();
+    console.log(`[slot] handoff -> id=${next.queueNumber ?? 'unknown'}, active=${activeCount}, queue=${waitQueue.length}`);
+    next.resolve();
   }
 }
 
