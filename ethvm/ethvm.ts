@@ -2,16 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import { Wallet, providers, utils, BigNumber } from 'ethers';
 
-// Basic Ethereum address validation helper
-export function isValidAddress(address: string | undefined | null) {
-  if (!address || typeof address !== 'string') return false;
-  try {
-    return utils.isAddress(address);
-  } catch (e) {
-    return false;
-  }
-}
-
 /**
  * =========================
  * Config & Types
@@ -31,7 +21,6 @@ interface WalletOutput {
   wallets: WalletInfo[];
 }
 
-// Exported reusable sendTransaction for external use (returns hash and optional receipt)
 interface SendResult {
   transactionId: string;
   transactionTime: string | null;
@@ -42,7 +31,16 @@ interface SendResult {
   balance?: number | null;
 }
 
-// Exported reusable wallet generator for other modules (e.g. ethvm_api.ts)
+// Basic Ethereum address validation helper
+export function isValidAddress(address: string | undefined | null) {
+  if (!address || typeof address !== 'string') return false;
+  try {
+    return utils.isAddress(address);
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function generateWallets(count: number, label = 'sepolia-wallet'): Promise<WalletInfo[]> {
   const wallets: WalletInfo[] = [];
   for (let i = 0; i < count; i++) {

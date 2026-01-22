@@ -11,31 +11,6 @@ type QueueEntry = { queueNumber?: number; resolve: () => void };
 const waitQueue: Array<QueueEntry> = [];
 let nextQueueNumber = 0;
 
-function acquireSlot(): Promise<void> {
-  if (activeCount < MAX_CONCURRENT) {
-    activeCount++;
-    console.log(`[slot] acquire -> active=${activeCount}, queue=${waitQueue.length}`);
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    const q = ++nextQueueNumber;
-    waitQueue.push({ queueNumber: q, resolve });
-    console.log(`[slot] queued -> id=${q}, active=${activeCount}, queue=${waitQueue.length}`);
-  });
-}
-
-function releaseSlot() {
-  if (activeCount <= 0) return;
-  activeCount--;
-  console.log(`[slot] release -> active=${activeCount}, queue=${waitQueue.length}`);
-  const next = waitQueue.shift();
-  if (next) {
-    activeCount++;
-    console.log(`[slot] handoff -> id=${next.queueNumber ?? 'unknown'}, active=${activeCount}, queue=${waitQueue.length}`);
-    next.resolve();
-  }
-}
-
 type Session = {
   address: string;
   slotHeld: boolean;
@@ -43,16 +18,6 @@ type Session = {
 };
 
 const sessions = new Map<string, Session>();
-
-function resolveAddress(identifier: string): string {
-  if (isValidAddress(identifier)) return identifier;
-
-  const session = sessions.get(identifier);
-  if (!session) {
-    throw new Error('invalid or expired session');
-  }
-  return session.address;
-}
 
 const typeDefs = readFileSync(join(__dirname, '..', 'schema.graphql'), 'utf8');
 
@@ -82,6 +47,41 @@ const JSONScalar = new GraphQLScalarType({
     }
   },
 });
+
+function acquireSlot(): Promise<void> {
+  if (activeCount < MAX_CONCURRENT) {
+    activeCount++;
+    console.log(`[slot] acquire -> active=${activeCount}, queue=${waitQueue.length}`);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const q = ++nextQueueNumber;
+    waitQueue.push({ queueNumber: q, resolve });
+    console.log(`[slot] queued -> id=${q}, active=${activeCount}, queue=${waitQueue.length}`);
+  });
+}
+
+function releaseSlot() {
+  if (activeCount <= 0) return;
+  activeCount--;
+  console.log(`[slot] release -> active=${activeCount}, queue=${waitQueue.length}`);
+  const next = waitQueue.shift();
+  if (next) {
+    activeCount++;
+    console.log(`[slot] handoff -> id=${next.queueNumber ?? 'unknown'}, active=${activeCount}, queue=${waitQueue.length}`);
+    next.resolve();
+  }
+}
+
+function resolveAddress(identifier: string): string {
+  if (isValidAddress(identifier)) return identifier;
+
+  const session = sessions.get(identifier);
+  if (!session) {
+    throw new Error('invalid or expired session');
+  }
+  return session.address;
+}
 
 const resolvers = {
   JSON: JSONScalar,

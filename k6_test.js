@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-const SERVER_URL = __ENV.SERVER_URL || 'http://localhost:4000/';
+const SERVER_URL = __ENV.SERVER_URL || 'http://localhost:4002/';
 
 const combinedQuery = `
 query GetBalanceAndTxs($identifier: String!) {
@@ -29,8 +29,8 @@ const authMutation = `mutation Auth($payload: JSON) { auth(payload: $payload) { 
 const IDS = __ENV.ID
   ? __ENV.ID.split(',').map((s) => s.trim())
   : [
-      'tb1qy63lsd8ld6wj258gp0aazvsy27um52e53hyzth',
-      'tb1qsqkgy3n6vme507a643jlu49gnfzvljjufykwf2',
+      '7uR8CxNFMrrMz84VEDVrzaGztpw3hjvW194nX4dPzJHm',
+      '126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs',
     ];
 
 export let options = {

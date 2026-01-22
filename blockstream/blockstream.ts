@@ -12,6 +12,12 @@ const API_BASE = 'https://blockstream.info/testnet/api';
 
 const DEFAULT_WALLET_FILE = 'wallet.json';
 
+type BTCWallet = {
+  label?: string;
+  id: string;
+  PrivateKey: string;
+  createdAt: string;
+};
 // Basic bitcoin testnet address validation helper
 export function isValidAddress(id: string) {
   if (!id || typeof id !== 'string') return false;
@@ -23,13 +29,6 @@ export function isValidAddress(id: string) {
     return false;
   }
 }
-
-export type BTCWallet = {
-  label?: string;
-  id: string;
-  PrivateKey: string;
-  createdAt: string;
-};
 
 export function generateWallet(count = 1, label = 'btc-wallet'): BTCWallet[] {
   const out: BTCWallet[] = [];

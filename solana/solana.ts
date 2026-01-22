@@ -11,6 +11,13 @@ import {
   PublicKey
 } from "@solana/web3.js";
 
+interface SolanaWalletInfo {
+  label: string;
+  address: string;
+  PrivateKey: number[];
+  createdAt: string;
+}
+
 function getConnection() { return new Connection(clusterApiUrl("devnet"), "confirmed"); }
 
 export function isValidAddress(address: string | undefined | null) {
@@ -23,13 +30,6 @@ export function isValidAddress(address: string | undefined | null) {
   } catch (e) {
     return false;
   }
-}
-
-interface SolanaWalletInfo {
-  label: string;
-  address: string;
-  PrivateKey: number[];
-  createdAt: string;
 }
 
 // Generate Solana wallets
