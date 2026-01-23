@@ -29,8 +29,8 @@ const authMutation = `mutation Auth($payload: JSON) { auth(payload: $payload) { 
 const IDS = __ENV.ID
   ? __ENV.ID.split(',').map((s) => s.trim())
   : [
-      '7uR8CxNFMrrMz84VEDVrzaGztpw3hjvW194nX4dPzJHm',
       '126mzPE5MSj6dQzqYieUZD1vyUbe7gkGoDKEhB26Zahs',
+      // '0xd33c7c296426fb02f5ed4e91fd0f8944daac14b7',
     ];
 
 export let options = {
@@ -76,7 +76,7 @@ export default function () {
   const qPayload = JSON.stringify({
   query: combinedQuery,
   variables: { identifier },
-})
+});
   const res = http.post(SERVER_URL, qPayload, params);
   check(res, {
     'query status 200': (r) => r.status === 200,
